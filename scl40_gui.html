@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SCL-40 Control</title>
+  <link rel="stylesheet" href="scl40_gui.css">
+  <link rel="stylesheet" href="scl40_gui_controls.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="mark">S</span><div><b>LC CONTROL</b><small>SHIMADZU SCL-40</small></div></div>
+      <div class="top-actions"><span id="modeBadge" class="badge neutral">READ ONLY</span><span id="clock">--:--:--</span></div>
+    </header>
+
+    <section class="hero panel">
+      <div>
+        <p class="eyebrow">SYSTEM OVERVIEW</p>
+        <h1><span id="controllerModel">SCL-40</span> <em>/</em> <span id="pumpModel">checking…</span></h1>
+        <p id="subtitle">192.168.200.99 연결 상태를 확인하고 있습니다.</p>
+      </div>
+      <div id="connectionOrb" class="orb offline"><span></span><b id="connectionText">CONNECTING</b><small id="latency">— ms</small></div>
+    </section>
+
+    <section class="metrics">
+      <article class="metric panel accent-blue"><div class="metric-head"><span>PRESSURE</span><i>LIVE</i></div><strong id="pressure">—</strong><small>MPa</small><div class="sparkline empty">Monitor session required</div></article>
+      <article class="metric panel accent-mint"><div class="metric-head"><span>CURRENT FLOW</span><i>LIVE</i></div><strong id="flow">—</strong><small>mL/min</small><div class="sparkline empty">Monitor session required</div></article>
+      <article class="metric panel accent-purple"><div class="metric-head"><span>TARGET FLOW</span><i>METHOD</i></div><strong id="targetFlow">—</strong><small>mL/min</small><div class="sparkline empty">Monitor session required</div></article>
+    </section>
+
+    <section class="grid">
+      <article class="panel pump-card">
+        <div class="section-title"><div><p class="eyebrow">PUMP CONTROL</p><h2>Pump A</h2></div><span id="pumpState" class="state unknown">UNKNOWN</span></div>
+        <div class="pump-visual"><div class="pump-icon"><span></span></div><div><b id="pumpDetail">LC-40i</b><small id="pumpVersion">Version —</small></div></div>
+        <div id="readonlyNotice" class="notice"><b>로그인 필요</b><span>SCL-40 사용자 계정으로 로그인하면 제어가 활성화됩니다.</span></div>
+        <div class="login-row">
+          <input id="userId" placeholder="SCL-40 User ID" autocomplete="username">
+          <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+          <button id="loginBtn" class="button login">LOGIN</button>
+          <button id="logoutBtn" class="button login" disabled>LOGOUT</button>
+        </div>
+        <div class="flow-control">
+          <label>목표 유량 <span>mL/min</span></label>
+          <div><input id="flowInput" type="number" min="0" step="0.001" placeholder="0.046"><button id="setFlowBtn" class="button" disabled>SET FLOW</button></div>
+          <small>허용 범위 0.0000~1.0000 · 변경 후 장비 값을 다시 확인합니다.</small>
+        </div>
+        <div class="control-row">
+          <button id="startBtn" class="button start" disabled><span>▶</span> START</button>
+          <button id="stopBtn" class="button stop" disabled><span>■</span> STOP</button>
+        </div>
+      </article>
+
+      <article class="panel details-card">
+        <div class="section-title"><div><p class="eyebrow">INSTRUMENT</p><h2>Connection details</h2></div><button id="refreshBtn" class="icon-button" title="새로고침">↻</button></div>
+        <dl>
+          <div><dt>Controller</dt><dd id="controllerDetail">—</dd></div>
+          <div><dt>Pump address</dt><dd id="pumpAddress">—</dd></div>
+          <div><dt>Host name</dt><dd id="hostName">—</dd></div>
+          <div><dt>Server</dt><dd id="serverType">—</dd></div>
+          <div><dt>System state</dt><dd id="systemState">—</dd></div>
+          <div><dt>Login state</dt><dd id="loginState">—</dd></div>
+          <div><dt>Last operator</dt><dd id="lastOperator">—</dd></div>
+          <div><dt>Last command</dt><dd id="lastCommand">—</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section class="panel log-card">
+      <div class="section-title"><div><p class="eyebrow">ACTIVITY</p><h2>Communication log</h2></div><span class="live-dot">LIVE</span></div>
+      <div id="activity" class="activity"></div>
+    </section>
+    <footer>Local dashboard · No cloud connection · <span id="lastUpdated">Not updated</span></footer>
+  </main>
+
+  <script src="scl40_gui.js"></script>
+</body>
+</html>
