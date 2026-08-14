@@ -15,10 +15,14 @@ import urllib.error
 import urllib.request
 import webbrowser
 import xml.etree.ElementTree as ET
+from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+from scl40_jetrun import JetRunController, RunError
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -33,6 +37,36 @@ STATUS_REQUEST = (
 PUMP_START_REQUEST = XML_HEADER + '<Event><Method><PumpBT>1</PumpBT></Method></Event>'
 PUMP_STOP_REQUEST = XML_HEADER + '<Event><Method><PumpBT>0</PumpBT></Method></Event>'
 
+# Writable Method 0 fields for Pump A. Element names and their position in the
+# document come from the live Method.cgi read response, not from guesswork.
+# `order` is the sequence the instrument itself uses inside each section.
+PARAM_SPEC: dict[str, dict[str, Any]] = {
+    "flow": {
+        "section": "Usual", "tag": "Flow", "order": 0, "decimals": 4,
+        "label": "유량", "unit": "mL/min",
+        "min": Decimal("0"), "max": Decimal("1.0"),
+    },
+    "tflow": {
+        "section": "Usual", "tag": "Tflow", "order": 1, "decimals": 4,
+        "label": "총 유량 시간", "unit": "min",
+        "min": Decimal("0"), "max": Decimal("999.9999"),
+    },
+    "pmax": {
+        "section": "Usual", "tag": "Pmax", "order": 2, "decimals": 1,
+        "label": "압력 상한", "unit": "MPa",
+        "min": Decimal("0"), "max": Decimal("10.0"),
+    },
+    "pmin": {
+        "section": "Detail", "tag": "Pmin", "order": 0, "decimals": 1,
+        "label": "압력 하한", "unit": "MPa",
+        "min": Decimal("0"), "max": Decimal("10.0"),
+    },
+}
+
+# Flow and Tflow always travel together: that pairing is the write request shape
+# already confirmed against the instrument.
+ALWAYS_SENT = ("flow", "tflow")
+
 
 class SCL40Error(RuntimeError):
     pass
@@ -46,7 +80,7 @@ def text_at(node: ET.Element | None, path: str, default: str = "") -> str:
 
 
 class SCL40Client:
-    def __init__(self, host: str, timeout: float = 3.0) -> None:
+    def __init__(self, host: str, timeout: float = 3.0, pressure_ceiling: Decimal | None = None) -> None:
         self.host = host
         self.timeout = timeout
         self.base_url = f"http://{host}"
@@ -54,6 +88,20 @@ class SCL40Client:
         self._config_cache_time = 0.0
         self.session_id = ""
         self.user_id = ""
+        self.limits = {key: dict(spec) for key, spec in PARAM_SPEC.items()}
+        if pressure_ceiling is not None:
+            for key in ("pmax", "pmin"):
+                self.limits[key]["max"] = pressure_ceiling
+
+    def limit_table(self) -> dict[str, dict[str, Any]]:
+        """Serialisable copy of the write limits, shared with the browser."""
+        return {
+            key: {
+                "label": spec["label"], "unit": spec["unit"], "decimals": spec["decimals"],
+                "min": str(spec["min"]), "max": str(spec["max"]),
+            }
+            for key, spec in self.limits.items()
+        }
 
     def _post_xml(self, endpoint: str, body: str) -> tuple[ET.Element, str]:
         url = self.base_url + endpoint
@@ -243,51 +291,184 @@ class SCL40Client:
             raise SCL40Error(f"Event 응답값 불일치: {echoed}")
         return {"response_root": root.tag, "response": raw[:2000]}
 
-    def set_flow(self, value: Any) -> dict[str, Any]:
-        if not self.session_id:
-            raise SCL40Error("유량 변경 전에 SCL-40 로그인이 필요합니다.")
+    def _format(self, key: str, value: Any) -> str:
+        spec = self.limits[key]
+        quantum = Decimal(1).scaleb(-spec["decimals"])
+        return f"{Decimal(str(value)).quantize(quantum):.{spec['decimals']}f}"
+
+    def _validate(self, key: str, raw: Any) -> str:
+        spec = self.limits.get(key)
+        if spec is None:
+            raise SCL40Error(f"알 수 없는 파라미터: {key}")
         try:
-            flow = Decimal(str(value))
+            value = Decimal(str(raw))
         except (InvalidOperation, ValueError) as exc:
-            raise SCL40Error("유량은 숫자로 입력하세요.") from exc
-        if not Decimal("0") <= flow <= Decimal("1.0"):
-            raise SCL40Error("허용 유량 범위는 0.0000~1.0000 mL/min입니다.")
-        flow_text = f"{flow.quantize(Decimal('0.0001')):.4f}"
+            raise SCL40Error(f"{spec['label']} 값은 숫자로 입력하세요.") from exc
+        if not spec["min"] <= value <= spec["max"]:
+            raise SCL40Error(
+                f"{spec['label']} 허용 범위는 {spec['min']}~{spec['max']} {spec['unit']}입니다."
+            )
+        return self._format(key, value)
+
+    def set_method_params(self, updates: dict[str, Any]) -> dict[str, Any]:
+        """Write Method 0 pump parameters and verify every field by readback.
+
+        Only element names and positions observed in the instrument's own
+        Method.cgi read response are emitted. A field the instrument silently
+        ignores fails the readback check instead of passing unnoticed.
+        """
+        if not self.session_id:
+            raise SCL40Error("파라미터 변경 전에 SCL-40 로그인이 필요합니다.")
+        if not updates:
+            raise SCL40Error("변경할 파라미터가 없습니다.")
+
+        values = {key: self._validate(key, raw) for key, raw in updates.items()}
         current = self.get_method()
-        tflow = current.get("tflow") or "0.0000"
+
+        # Flow and Tflow always travel together in the confirmed request shape,
+        # so unchanged ones are resent with the value the instrument reports.
+        for key in ALWAYS_SENT:
+            if key not in values:
+                values[key] = self._format(key, current.get(key) or 0)
+
+        pmax = Decimal(values.get("pmax") or current.get("pmax") or "0")
+        pmin = Decimal(values.get("pmin") or current.get("pmin") or "0")
+        if pmax > 0 and pmin >= pmax:
+            raise SCL40Error(f"압력 하한({pmin})은 상한({pmax})보다 작아야 합니다.")
+
         root = ET.Element("Method")
         ET.SubElement(root, "No").text = current.get("number") or "0"
         pumps = ET.SubElement(root, "Pumps")
         pump = ET.SubElement(pumps, "Pump")
         ET.SubElement(pump, "UnitID").text = "A"
-        usual = ET.SubElement(pump, "Usual")
-        ET.SubElement(usual, "Flow").text = flow_text
-        ET.SubElement(usual, "Tflow").text = tflow
+        for section in ("Usual", "Detail"):
+            keys = [k for k in values if self.limits[k]["section"] == section]
+            if not keys:
+                continue
+            node = ET.SubElement(pump, section)
+            for key in sorted(keys, key=lambda k: self.limits[k]["order"]):
+                ET.SubElement(node, self.limits[key]["tag"]).text = values[key]
+
         body = XML_HEADER + ET.tostring(root, encoding="unicode")
         response, _ = self._post_xml("/cgi-bin/Method.cgi", body)
         if response.tag != "Method":
             raise SCL40Error(f"Method 응답 루트가 예상과 다름: {response.tag}")
+
         readback = self.get_method()
+        mismatched = []
+        for key, sent in values.items():
+            try:
+                if Decimal(readback.get(key) or "nan") != Decimal(sent):
+                    mismatched.append(f"{self.limits[key]['label']} 요청 {sent} / 장비 {readback.get(key) or 'unknown'}")
+            except InvalidOperation:
+                mismatched.append(f"{self.limits[key]['label']} 재조회 값 없음")
+        if mismatched:
+            raise SCL40Error("파라미터 재조회 불일치: " + "; ".join(mismatched))
+
+        applied = {
+            key: {
+                "label": self.limits[key]["label"],
+                "unit": self.limits[key]["unit"],
+                "previous": current.get(key),
+                "value": readback.get(key),
+                "changed": key in updates,
+            }
+            for key in values
+        }
+        return {"applied": applied, "request": body, "method": readback}
+
+
+class TrendRecorder:
+    """Server-side pressure/flow history shared by every browser.
+
+    The run controller samples at 1 Hz while a run is active and each dashboard
+    poll contributes a sample too, so the trace survives page reloads and is
+    identical on every connected client.
+    """
+
+    def __init__(self, capacity: int = 7200, min_interval: float = 0.5) -> None:
+        self._samples: deque[tuple[float, float | None, float | None, float | None]] = deque(maxlen=capacity)
+        self._lock = threading.Lock()
+        self._min_interval = min_interval
+
+    @staticmethod
+    def _number(value: Any) -> float | None:
         try:
-            matched = Decimal(readback.get("flow") or "-1") == Decimal(flow_text)
-        except InvalidOperation:
-            matched = False
-        if not matched:
-            raise SCL40Error(f"유량 재조회 불일치: 요청 {flow_text}, 장비 {readback.get('flow') or 'unknown'}")
-        return {"flow": readback["flow"], "previous_flow": current.get("flow"), "tflow": readback.get("tflow")}
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def record(self, pressure: Any, flow: Any, target: Any) -> None:
+        now = time.time()
+        sample = (round(now, 2), self._number(pressure), self._number(flow), self._number(target))
+        if sample[1] is None and sample[2] is None:
+            return
+        with self._lock:
+            if self._samples and now - self._samples[-1][0] < self._min_interval:
+                return
+            self._samples.append(sample)
+
+    def series(self, since: float = 0.0) -> tuple[list[list[Any]], float]:
+        with self._lock:
+            samples = [list(item) for item in self._samples if item[0] > since]
+            until = self._samples[-1][0] if self._samples else since
+        return samples, until
 
 
-def make_handler(client: SCL40Client, control_enabled: bool, log: logging.Logger, access_pin: str = ""):
-    command_lock = threading.Lock()
-    activity_lock = threading.Lock()
-    control_activity: dict[str, Any] = {
-        "busy": False,
-        "operator_ip": "",
-        "action": "",
-        "timestamp": "",
-        "result": "",
-    }
+class CommandBusy(RuntimeError):
+    pass
 
+
+class CommandBroker:
+    """Serialises every instrument write, whoever issues it.
+
+    The browser and the pressure watchdog both go through here, so a watchdog
+    STOP can never interleave with an operator command.
+    """
+
+    def __init__(self) -> None:
+        self._command_lock = threading.Lock()
+        self._activity_lock = threading.Lock()
+        self._activity: dict[str, Any] = {
+            "busy": False, "operator_ip": "", "action": "", "timestamp": "", "result": "",
+        }
+
+    def activity(self) -> dict[str, Any]:
+        with self._activity_lock:
+            return dict(self._activity)
+
+    def execute(self, action: str, operator: str, work: Any) -> Any:
+        if not self._command_lock.acquire(blocking=False):
+            raise CommandBusy("다른 장비 명령을 처리 중입니다. 잠시 후 다시 시도하세요.")
+        try:
+            with self._activity_lock:
+                self._activity.update(
+                    busy=True, operator_ip=operator, action=action,
+                    timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
+                    result="processing",
+                )
+            result = work()
+            with self._activity_lock:
+                self._activity.update(busy=False, result="success")
+            return result
+        except Exception:
+            with self._activity_lock:
+                self._activity.update(busy=False, result="failed")
+            raise
+        finally:
+            self._command_lock.release()
+
+
+def make_handler(
+    client: SCL40Client,
+    broker: CommandBroker,
+    jetrun: JetRunController,
+    recorder: TrendRecorder,
+    control_enabled: bool,
+    log: logging.Logger,
+    access_pin: str = "",
+    simulated: bool = False,
+):
     class Handler(BaseHTTPRequestHandler):
         server_version = "SCL40LocalGUI/0.1"
 
@@ -344,20 +525,45 @@ def make_handler(client: SCL40Client, control_enabled: bool, log: logging.Logger
                 self._file("scl40_gui.html", "text/html; charset=utf-8")
             elif self.path == "/scl40_gui.css":
                 self._file("scl40_gui.css", "text/css; charset=utf-8")
-            elif self.path == "/scl40_gui_controls.css":
-                self._file("scl40_gui_controls.css", "text/css; charset=utf-8")
             elif self.path == "/scl40_gui.js":
                 self._file("scl40_gui.js", "text/javascript; charset=utf-8")
+            elif self.path == "/ibs_watermark.png":
+                self._file("ibs_watermark.png", "image/png")
+            elif self.path.split("?", 1)[0] == "/api/trend":
+                query = parse_qs(urlparse(self.path).query)
+                try:
+                    since = float(query.get("since", ["0"])[0])
+                except (TypeError, ValueError):
+                    since = 0.0
+                samples, until = recorder.series(since)
+                self._json(200, {"ok": True, "samples": samples, "until": until})
             elif self.path == "/api/snapshot":
                 try:
-                    with activity_lock:
-                        activity = dict(control_activity)
-                    self._json(200, {**client.snapshot(), "control_enabled": control_enabled, "control_activity": activity})
+                    snapshot = client.snapshot()
+                    monitor = snapshot.get("monitor") or {}
+                    if monitor.get("available"):
+                        recorder.record(monitor.get("pressure"), monitor.get("flow"), monitor.get("target_flow"))
+                    self._json(200, {
+                        **snapshot,
+                        "control_enabled": control_enabled,
+                        "control_activity": broker.activity(),
+                        "simulated": simulated,
+                        "limits": client.limit_table(),
+                        "run": jetrun.state(),
+                    })
                 except SCL40Error as exc:
                     log.warning("snapshot failed: %s", exc)
-                    self._json(502, {"ok": False, "error": str(exc), "host": client.host, "control_enabled": control_enabled})
+                    self._json(502, {
+                        "ok": False, "error": str(exc), "host": client.host,
+                        "control_enabled": control_enabled, "simulated": simulated,
+                        "run": jetrun.state(),
+                    })
             elif self.path == "/api/info":
-                self._json(200, {"host": client.host, "control_enabled": control_enabled, "read_only": not control_enabled})
+                self._json(200, {
+                    "host": client.host, "control_enabled": control_enabled,
+                    "read_only": not control_enabled, "simulated": simulated,
+                    "limits": client.limit_table(),
+                })
             else:
                 self.send_error(404)
 
@@ -379,59 +585,73 @@ def make_handler(client: SCL40Client, control_enabled: bool, log: logging.Logger
 
                 if self.path in ("/api/control/start", "/api/control/stop"):
                     action = "START" if self.path.endswith("start") else "STOP"
+                    if not self._control_allowed(body, action):
+                        return
+                    log.warning("sending confirmed pump command: %s from %s", action, self.client_address[0])
+                    result = broker.execute(
+                        action, self.client_address[0],
+                        lambda: client.send_pump(start=(action == "START")),
+                    )
+                    if action == "STOP":
+                        jetrun.abort("수동 STOP", self.client_address[0], stop_pump=False)
+                    self._json(200, {"ok": True, "action": action, **result})
+                    return
+
+                if self.path == "/api/control/method":
+                    if not self._control_allowed(body, "SET_METHOD"):
+                        return
+                    params = body.get("params") or {}
+                    if not isinstance(params, dict):
+                        self._json(400, {"ok": False, "error": "params는 객체여야 합니다."})
+                        return
+                    result = broker.execute(
+                        "SET METHOD", self.client_address[0],
+                        lambda: client.set_method_params(params),
+                    )
+                    changes = ", ".join(
+                        f"{item['label']} {item['previous']} -> {item['value']} {item['unit']}"
+                        for item in result["applied"].values() if item["changed"]
+                    )
+                    log.warning("method write from %s: %s", self.client_address[0], changes or "no change")
+                    log.info("method write request: %s", result["request"])
+                    self._json(200, {"ok": True, **result})
+                    return
+
+                if self.path == "/api/run/start":
+                    if not self._control_allowed(body, "START_RUN"):
+                        return
+                    state = jetrun.start(body, self.client_address[0])
+                    self._json(200, {"ok": True, "run": state})
+                    return
+
+                if self.path == "/api/run/abort":
                     if not control_enabled:
                         self._json(403, {"ok": False, "error": "서버가 읽기 전용 모드입니다."})
                         return
-                    if body.get("confirmation") != action:
-                        self._json(400, {"ok": False, "error": f"{action} 확인이 필요합니다."})
-                        return
-                    if not command_lock.acquire(blocking=False):
-                        self._json(409, {"ok": False, "error": "다른 PC의 장비 명령을 처리 중입니다. 잠시 후 다시 시도하세요."})
-                        return
-                    try:
-                        with activity_lock:
-                            control_activity.update(busy=True, operator_ip=self.client_address[0], action=action, timestamp=datetime.now().astimezone().isoformat(timespec="seconds"), result="processing")
-                        log.warning("sending confirmed pump command: %s from %s", action, self.client_address[0])
-                        result = client.send_pump(start=(action == "START"))
-                        with activity_lock:
-                            control_activity.update(busy=False, result="success")
-                        self._json(200, {"ok": True, "action": action, **result})
-                    except Exception:
-                        with activity_lock:
-                            control_activity.update(busy=False, result="failed")
-                        raise
-                    finally:
-                        command_lock.release()
+                    state = jetrun.abort(
+                        str(body.get("reason") or "사용자 중단"),
+                        self.client_address[0],
+                    )
+                    self._json(200, {"ok": True, "run": state})
                     return
-                if self.path == "/api/control/set-flow":
-                    if not control_enabled:
-                        self._json(403, {"ok": False, "error": "서버가 읽기 전용 모드입니다."})
-                        return
-                    if body.get("confirmation") != "SET_FLOW":
-                        self._json(400, {"ok": False, "error": "SET_FLOW 확인이 필요합니다."})
-                        return
-                    if not command_lock.acquire(blocking=False):
-                        self._json(409, {"ok": False, "error": "다른 PC의 장비 명령을 처리 중입니다. 잠시 후 다시 시도하세요."})
-                        return
-                    try:
-                        with activity_lock:
-                            control_activity.update(busy=True, operator_ip=self.client_address[0], action="SET FLOW", timestamp=datetime.now().astimezone().isoformat(timespec="seconds"), result="processing")
-                        result = client.set_flow(body.get("flow"))
-                        log.warning("confirmed flow change from %s: %s -> %s mL/min", self.client_address[0], result.get("previous_flow"), result["flow"])
-                        with activity_lock:
-                            control_activity.update(busy=False, result="success")
-                        self._json(200, {"ok": True, **result})
-                    except Exception:
-                        with activity_lock:
-                            control_activity.update(busy=False, result="failed")
-                        raise
-                    finally:
-                        command_lock.release()
-                    return
+
                 self.send_error(404)
+            except CommandBusy as exc:
+                self._json(409, {"ok": False, "error": str(exc)})
+            except RunError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
             except SCL40Error as exc:
                 log.error("request failed: %s", exc)
                 self._json(502, {"ok": False, "error": str(exc)})
+
+        def _control_allowed(self, body: dict[str, Any], token: str) -> bool:
+            if not control_enabled:
+                self._json(403, {"ok": False, "error": "서버가 읽기 전용 모드입니다."})
+                return False
+            if body.get("confirmation") != token:
+                self._json(400, {"ok": False, "error": f"{token} 확인이 필요합니다."})
+                return False
+            return True
 
     return Handler
 
@@ -444,7 +664,33 @@ def main() -> int:
     parser.add_argument("--access-pin-file", type=Path, help="PIN file required for non-local API access")
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
     parser.add_argument("--enable-control", action="store_true", help="enable START/STOP endpoints")
+    parser.add_argument(
+        "--simulator",
+        action="store_true",
+        help="run against a built-in offline SCL-40 simulator instead of real hardware",
+    )
+    parser.add_argument("--sim-port", type=int, default=9099, help="port for the built-in simulator")
+    parser.add_argument("--sim-latency", type=float, default=0.0, help="simulated response delay in seconds")
+    parser.add_argument("--sim-reservoir", type=float, default=0.15, help="simulated reservoir volume in mL")
+    parser.add_argument("--sim-sample", type=float, default=0.05, help="simulated sample volume in mL")
+    parser.add_argument(
+        "--pressure-ceiling",
+        type=Decimal,
+        default=Decimal("10.0"),
+        help="highest pressure limit (MPa) an operator may write to the method (default: 10.0)",
+    )
+    parser.add_argument(
+        "--guard-interval",
+        type=float,
+        default=1.0,
+        help="pressure watchdog polling interval in seconds (default: 1.0)",
+    )
     args = parser.parse_args()
+
+    if args.pressure_ceiling <= 0:
+        parser.error("--pressure-ceiling must be greater than zero")
+    if not 0.2 <= args.guard_interval <= 10:
+        parser.error("--guard-interval must be between 0.2 and 10 seconds")
 
     access_pin = ""
     if args.access_pin_file:
@@ -462,14 +708,39 @@ def main() -> int:
         handlers=[logging.FileHandler(log_path, encoding="utf-8"), logging.StreamHandler()],
     )
     log = logging.getLogger("scl40_gui")
-    client = SCL40Client(args.host)
-    server = ThreadingHTTPServer((args.bind, args.port), make_handler(client, args.enable_control, log, access_pin))
+
+    sim_server = None
+    sim_device = None
+    target_host = args.host
+    if args.simulator:
+        from scl40_sim import start_simulator
+
+        sim_server, sim_device = start_simulator(
+            args.sim_port, "127.0.0.1", latency=args.sim_latency,
+            reservoir_volume=args.sim_reservoir, sample_volume=args.sim_sample,
+        )
+        target_host = f"127.0.0.1:{args.sim_port}"
+        log.warning("SIMULATOR MODE - no real instrument is connected")
+
+    client = SCL40Client(target_host, pressure_ceiling=args.pressure_ceiling)
+    broker = CommandBroker()
+    recorder = TrendRecorder()
+    jetrun = JetRunController(
+        client, broker.execute, log,
+        poll_seconds=args.guard_interval, on_sample=recorder.record,
+    )
+    server = ThreadingHTTPServer(
+        (args.bind, args.port),
+        make_handler(client, broker, jetrun, recorder, args.enable_control, log, access_pin, simulated=args.simulator),
+    )
     url = f"http://127.0.0.1:{args.port}/"
-    log.info("SCL-40 target: %s", args.host)
+    log.info("SCL-40 target: %s", target_host)
     log.info("Dashboard: %s", url)
     log.info("Listen address: %s:%s", args.bind, args.port)
     log.info("Remote API PIN: %s", "enabled" if access_pin else "disabled")
     log.info("Mode: %s", "CONTROL" if args.enable_control else "READ ONLY")
+    log.info("Pressure write ceiling: %s MPa", args.pressure_ceiling)
+    log.info("LCP jet run controller: idle, %.1f s interval", args.guard_interval)
     log.info("Log: %s", log_path)
     if not args.no_browser:
         threading.Timer(0.7, lambda: webbrowser.open(url)).start()
@@ -478,7 +749,19 @@ def main() -> int:
     except KeyboardInterrupt:
         log.info("Stopped by user")
     finally:
+        jetrun.shutdown()
+        if client.session_id:
+            try:
+                client.logout()
+                log.warning("SCL-40 session released on shutdown")
+            except SCL40Error as exc:
+                log.error("logout on shutdown failed: %s", exc)
         server.server_close()
+        if sim_device is not None:
+            sim_device.shutdown()
+        if sim_server is not None:
+            sim_server.shutdown()
+            sim_server.server_close()
     return 0
 
 

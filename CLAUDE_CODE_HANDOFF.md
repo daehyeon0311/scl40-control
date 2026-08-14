@@ -10,10 +10,11 @@ guess undocumented command values.
 
 - `scl40_gui.py`: SCL client, XML parsing, HTTP API and local server
 - `scl40_gui.html`: dashboard markup
-- `scl40_gui.css`: main visual design
-- `scl40_gui_controls.css`: login/flow/control additions
-- `scl40_gui.js`: polling, login and control interactions
+- `scl40_gui.css`: single stylesheet, light instrument-console styling
+- `scl40_gui.js`: polling, SVG trend chart, login and control interactions
 - `scl40_probe.py`: original safe endpoint probe
+- `scl40_sim.py`: offline SCL-40 emulator with an LCP jet cartridge model
+- `scl40_jetrun.py`: server-side fill/run/stop state machine
 - `START_SCL40_GUI.cmd`: Windows launcher
 - `ENABLE_SCL40_WIFI_FIREWALL.ps1/.cmd`: restricted LAN firewall setup
 
@@ -46,6 +47,14 @@ guess undocumented command values.
 
 ## Highest priority next steps
 
+0. First real-instrument session, in order:
+   a. Log in, read Method 0, note the working pressure at the fill flow and at
+      the experiment flow. Those numbers set the two run thresholds.
+   b. Write `Pmax` alone through METHOD PARAMETERS and confirm the readback.
+      This is the first time the `Usual/Pmax` write path touches hardware.
+   c. Run `감시만` mode once on a pump the operator started manually, so the
+      controller only has to issue STOP.
+   d. Only then run the full LCP JET mode.
 1. Have the user log in and perform a small, physically safe SET FLOW test.
 2. Capture the exact Method response and post-write Method readback.
 3. Compare the LC-40i front-panel value and REMOTE indicator with Monitor XML.
@@ -53,13 +62,27 @@ guess undocumented command values.
    ownership transition distinct from login. Do not invent one.
 5. Add structured, redacted protocol logs that include response XML but never
    passwords, session IDs or the dashboard PIN.
-6. Add an explicit logout on graceful server shutdown if a session is active.
+6. ~~Add an explicit logout on graceful server shutdown if a session is active.~~
+   Done: `main()` releases an active session in its `finally` block.
 7. Add unit tests for XML builders/parsers, login result codes, flow limits,
    PIN authorization and concurrent command locking.
 
+## Purpose
+
+The pump feeds an LCP jet cartridge, not a column. There is no detector and no
+chromatography. What matters is a stable low flow and stopping the pump on the
+end-of-sample pressure rise.
+
 ## Safety requirements
 
-- Never automatically send START, STOP, SET FLOW or pressure-limit writes.
+- The LCP jet run controller (`scl40_jetrun.py`) is the one deliberate
+  exception to "never send commands automatically": the operator arms it per
+  run with an explicit confirmation, and it issues exactly one flow switch and
+  one STOP. Everything else still requires an operator action.
+- `Pmax` on the instrument remains the real protection. The watchdog is an
+  earlier, software-side trigger, not a replacement.
+- Never automatically send START, STOP, SET FLOW or pressure-limit writes
+  outside that armed run.
 - Show any new exact write request to the user before first implementation/test.
 - Do not use LC-20/SCL-10AVP serial commands on LC-40i.
 - Do not claim physical success from HTTP 200 alone.
