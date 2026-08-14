@@ -4,228 +4,352 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>SCL-40 LCP Jet Console</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ffffff'/%3E%3Cpath d='M20 8a9 9 0 1 1-9 9' fill='none' stroke='%23606060' stroke-width='4.5' stroke-linecap='round'/%3E%3Ccircle cx='9.5' cy='8.5' r='4' fill='%23C81000'/%3E%3Cpath d='M6 14h7v12H6z' fill='%23C81000'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="scl40_gui.css">
 </head>
+<!--
+  Terminology rule for this interface:
+  - instrument protocol names stay in English (Method, Flow, Tflow, Pmax, Pmin,
+    OpState, START, STOP) so they match the vocabulary of the device itself
+  - everything about the workflow is Korean
+-->
 <body>
   <div class="app">
 
     <header class="titlebar">
       <div class="identity">
-        <span class="vendor">SHIMADZU</span>
-        <span class="unit" id="controllerModel">SCL-40</span>
-        <span class="divider"></span>
-        <span class="unit-sub"><span id="pumpModel">LC-40i</span> <em id="pumpUnit">Unit A</em></span>
+        <svg class="brandmark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M20 8a9 9 0 1 1-9 9" fill="none" stroke="#606060" stroke-width="4.5" stroke-linecap="round"/>
+          <circle cx="9.5" cy="8.5" r="4" fill="#C81000"/>
+          <path d="M6 14h7v12H6z" fill="#C81000"/>
+        </svg>
+        <div class="identity-text">
+          <b>LCP JET CONSOLE</b>
+          <small><span id="controllerModel">SCL-40</span> · <span id="pumpModel">LC-40i</span> <span id="pumpUnit">Unit A</span></small>
+        </div>
       </div>
       <div class="titlebar-status">
-        <span class="link" id="linkState" data-state="wait"><i></i><b>CONNECTING</b></span>
-        <span class="field"><label>LATENCY</label><output id="latency">—</output></span>
-        <span class="field"><label>SESSION</label><output id="sessionUser">NONE</output></span>
-        <span class="mode" id="modeBadge" data-mode="readonly">READ ONLY</span>
+        <span class="link" id="linkState" data-state="wait"><i></i><b>연결 확인 중</b></span>
+        <span class="field"><label>응답</label><output id="latency">—</output></span>
+        <span class="field"><label>세션</label><output id="sessionUser">없음</output></span>
+        <span class="mode" id="modeBadge" data-mode="readonly">읽기 전용</span>
         <output class="clock" id="clock">--:--:--</output>
       </div>
     </header>
 
     <div class="sim-strip" id="simBanner" hidden>
-      <b>SIMULATION</b>
+      <b>시뮬레이션</b>
       <span>실제 장비에 연결되어 있지 않습니다. 압력·유량은 모두 가상 값입니다.</span>
     </div>
 
+    <div class="alarms" id="alarmBar" hidden></div>
+
     <div class="workspace">
 
-      <aside class="readouts">
-        <div class="run-stage" id="runStageCard" data-stage="idle">
-          <span class="r-label">LCP JET RUN</span>
-          <span class="stage-value" id="runStageText">대기</span>
-          <span class="stage-note" id="runStageNote">런이 실행 중이 아닙니다.</span>
-          <div class="settle-bar" id="runSettleBar" hidden><i id="runSettleFill"></i></div>
-        </div>
-
-        <div class="readout" data-channel="pressure">
-          <span class="r-label">PRESSURE</span>
-          <span class="r-value" id="pressure">–.––</span>
-          <span class="r-unit">MPa</span>
-          <span class="r-note" id="pressureNote">limit —</span>
-        </div>
-        <div class="readout" data-channel="flow">
-          <span class="r-label">FLOW</span>
-          <span class="r-value" id="flow">–.––––</span>
-          <span class="r-unit">mL/min</span>
-          <span class="r-note" id="flowNote">measured</span>
-        </div>
-        <div class="readout" data-channel="target">
-          <span class="r-label">TARGET FLOW</span>
-          <span class="r-value" id="targetFlow">–.––––</span>
-          <span class="r-unit">mL/min</span>
-          <span class="r-note" id="targetNote">method 0</span>
-        </div>
-        <div class="pump-state" id="pumpState" data-state="unknown">
-          <span class="p-label">PUMP A</span>
-          <span class="p-value" id="pumpStateText">UNKNOWN</span>
-          <span class="p-note" id="pumpStateNote">OpState —</span>
-        </div>
-
-        <div class="rail-info">
-          <span class="p-label">ACQUISITION</span>
-          <dl>
-            <div><dt>Host</dt><dd id="railHost">—</dd></div>
-            <div><dt>Interval</dt><dd id="railPoll">—</dd></div>
-            <div><dt>Window</dt><dd id="railWindow">5 min</dd></div>
-            <div><dt>Samples</dt><dd id="railSamples">0</dd></div>
-          </dl>
-        </div>
-      </aside>
-
-      <main class="main">
-
-        <section class="panel trend-panel">
-          <div class="panel-head">
-            <h2>TREND</h2>
-            <div class="segmented" id="rangeGroup">
-              <button type="button" data-min="5" class="on">5 min</button>
-              <button type="button" data-min="15">15 min</button>
-              <button type="button" data-min="60">60 min</button>
+      <aside class="rail">
+        <section class="primary-readout" id="pressureCard" data-channel="pressure">
+          <header>
+            <span class="r-label">압력</span>
+            <span class="r-source" id="pressureSource">Monitor</span>
+          </header>
+          <p class="primary-value"><span id="pressure">–.––</span><em>MPa</em></p>
+          <div class="gauge">
+            <div class="gauge-track">
+              <i id="gaugeFill"></i>
+              <b id="gaugeMark" hidden></b>
             </div>
-            <div class="legend">
-              <span class="lg lg-p">압력</span>
-              <span class="lg lg-f">유량 변경</span>
-              <span class="lg lg-x">판단 압력</span>
+            <div class="gauge-scale">
+              <span>0</span>
+              <span id="gaugeNote">Pmax —</span>
             </div>
-          </div>
-          <div class="chart-wrap">
-            <svg id="chart" viewBox="0 0 960 300" role="img" aria-label="압력 및 유량 트렌드"></svg>
-            <p class="chart-empty" id="chartEmpty">모니터 세션이 필요합니다 — 로그인하면 기록이 시작됩니다.</p>
           </div>
         </section>
 
-        <div class="panel-row split">
-          <section class="panel run-panel">
+        <div class="readout-pair">
+          <section class="readout" data-channel="flow">
+            <span class="r-label">유량</span>
+            <span class="r-value" id="flow">–.––––</span>
+            <span class="r-unit">mL/min</span>
+          </section>
+          <section class="readout" data-channel="target">
+            <span class="r-label">설정 유량</span>
+            <span class="r-value" id="targetFlow">–.––––</span>
+            <span class="r-unit">mL/min</span>
+          </section>
+        </div>
+
+        <section class="pump-state" id="pumpState" data-state="unknown">
+          <span class="p-label">Pump A</span>
+          <span class="p-value" id="pumpStateText">확인 중</span>
+          <span class="p-note" id="pumpStateNote">OpState —</span>
+        </section>
+
+        <section class="run-stage" id="runStageCard" data-stage="idle">
+          <span class="p-label">LCP 젯 런</span>
+          <span class="stage-value" id="runStageText">대기</span>
+          <span class="stage-note" id="runStageNote">런이 실행 중이 아닙니다.</span>
+          <div class="settle-bar" id="runSettleBar" hidden><i id="runSettleFill"></i></div>
+        </section>
+
+        <section class="rail-info">
+          <span class="p-label">수집</span>
+          <dl>
+            <div><dt>장비</dt><dd id="railHost">—</dd></div>
+            <div><dt>주기</dt><dd id="railPoll">—</dd></div>
+            <div><dt>구간</dt><dd id="railWindow">5분</dd></div>
+            <div><dt>표본</dt><dd id="railSamples">0</dd></div>
+          </dl>
+        </section>
+      </aside>
+
+      <main class="main">
+        <nav class="tabs" id="tabs">
+          <button type="button" class="tab on" data-view="run">실행</button>
+          <button type="button" class="tab" data-view="setup">준비</button>
+          <button type="button" class="tab" data-view="log">기록</button>
+        </nav>
+
+        <!-- 실행 -->
+        <section class="view on" data-view="run">
+          <section class="panel schematic-panel">
             <div class="panel-head">
-              <h2>LCP JET RUN</h2>
-              <span class="stage-chip" id="runStageChip" data-stage="idle">대기</span>
-              <span class="head-note" id="runDetail">시작 전</span>
+              <h2>유로</h2>
+              <span class="head-note" id="schematicNote">대기</span>
             </div>
+            <div class="schematic-wrap">
+              <svg id="schematic" viewBox="0 0 880 116" role="img" aria-label="물 저장조에서 젯까지의 유로 상태">
+                <!-- pipes -->
+                <path class="pipe" id="pipeA" d="M126 56 H206" />
+                <path class="pipe" id="pipeB" d="M306 56 H432" />
+                <path class="pipe" id="pipeC" d="M540 56 H614" />
+                <path class="pipe" id="pipeD" d="M746 56 H784" />
 
-            <div class="run-body">
-              <div class="run-config">
-                <label class="field-box wide">
-                  <span>모드</span>
-                  <select id="runMode">
-                    <option value="lcp_jet">LCP JET — 물 채우기 → 실험 → 자동 정지</option>
-                    <option value="watch">감시만 — 실험 끝나면 정지</option>
-                  </select>
-                </label>
-                <label class="field-box" data-mode="lcp_jet" title="물을 빨리 채우기 위한 높은 유량. 물이 다 차면 자동으로 실험 유량으로 바뀝니다."><span>물 채울 때 유량</span><input id="runFillFlow" type="number" step="0.001" min="0" max="1"><em>mL/min</em></label>
-                <label class="field-box" data-mode="lcp_jet" title="물 채우는 중 압력이 이 값 이상이 되면 물이 다 차고 플런저가 샘플에 닿았다고 판단해서 실험 유량으로 전환합니다. 채울 때 정상 압력보다 높고 절대 압력 상한보다 낮게 잡으세요."><span>물 다 찬 판단 압력</span><input id="runFillPressure" type="number" step="0.1" min="0.05"><em>MPa</em></label>
-                <label class="field-box" title="실제 실험을 진행할 유량."><span>실험 유량</span><input id="runFlow" type="number" step="0.001" min="0" max="1"><em>mL/min</em></label>
-                <label class="field-box" title="실험 중 압력이 이 값 이상이 되면 샘플을 다 밀어냈다고 판단해서 펌프를 정지합니다. 실험 중 정상 압력보다 높고 절대 압력 상한보다 낮게 잡으세요."><span>실험 끝 판단 압력</span><input id="runPressure" type="number" step="0.1" min="0.05"><em>MPa</em></label>
-                <label class="field-box" title="어느 단계에서든 이 압력에 닿으면 무조건 런을 중단하고 펌프를 정지합니다. 판단 압력을 잘못 잡았거나 막혔을 때의 최후 방어선입니다. 장비 자체의 Pmax는 이보다 더 상위 방어선입니다."><span>절대 압력 상한</span><input id="runLimit" type="number" step="0.1" min="0.1"><em>MPa</em></label>
-                <label class="field-box" title="유량을 바꾼 직후에는 압력이 이전 값에서 내려오는 중이라 판단 압력을 이미 넘어 있습니다. 이 시간 동안은 감시하지 않습니다. 이 시간이 지나고 압력이 판단값 아래로 내려온 것이 확인되면 그때부터 감시를 시작합니다."><span>안정화 시간</span><input id="runSettle" type="number" step="5" min="0"><em>s</em></label>
-                <label class="field-box" title="한 단계가 이 시간을 넘기면 자동으로 중단하고 펌프를 정지합니다. 누수 등으로 압력이 영영 오르지 않을 때 무한정 도는 것을 막습니다. 0이면 제한 없음."><span>단계 제한 시간</span><input id="runTimeout" type="number" step="60" min="0"><em>s</em></label>
+                <!-- water reservoir -->
+                <g class="node" id="nodeReservoir">
+                  <rect x="26" y="32" width="100" height="48" rx="2"/>
+                  <rect class="water" x="28" y="52" width="96" height="26"/>
+                  <text class="node-title" x="76" y="98">물 저장조</text>
+                </g>
+
+                <!-- pump -->
+                <g class="node" id="nodePump">
+                  <rect x="206" y="26" width="100" height="60" rx="2"/>
+                  <circle class="rotor" cx="256" cy="48" r="12"/>
+                  <text class="node-value" id="schFlow" x="256" y="76">—</text>
+                  <text class="node-title" x="256" y="98">펌프 LC-40i</text>
+                </g>
+
+                <!-- pressure tap -->
+                <g class="node" id="nodeGauge">
+                  <line class="tap" x1="486" y1="56" x2="486" y2="40"/>
+                  <rect x="432" y="14" width="108" height="26" rx="2"/>
+                  <text class="node-value" id="schPressure" x="486" y="32">—</text>
+                  <text class="node-title" x="486" y="76">압력</text>
+                </g>
+
+                <!-- LCP cartridge: water pushes the plunger, plunger pushes sample -->
+                <g class="node" id="nodeCartridge">
+                  <rect x="614" y="36" width="132" height="40" rx="2"/>
+                  <rect class="water" x="616" y="38" width="52" height="36"/>
+                  <rect class="sample" x="676" y="38" width="68" height="36"/>
+                  <path class="plunger" d="M668 38 h8 v36 h-8 z"/>
+                  <text class="node-title" x="680" y="98">LCP 카트리지</text>
+                </g>
+
+                <!-- jet -->
+                <g class="node" id="nodeJet">
+                  <path class="nozzle" d="M784 46 L808 56 L784 66 Z"/>
+                  <circle class="drop d1" cx="818" cy="56" r="2.2"/>
+                  <circle class="drop d2" cx="827" cy="56" r="1.7"/>
+                  <circle class="drop d3" cx="835" cy="56" r="1.3"/>
+                  <text class="node-title" x="812" y="98">젯</text>
+                </g>
+              </svg>
+            </div>
+          </section>
+
+          <section class="panel trend-panel">
+            <div class="panel-head">
+              <h2>압력 트렌드</h2>
+              <div class="segmented" id="rangeGroup">
+                <button type="button" data-min="5" class="on">5분</button>
+                <button type="button" data-min="15">15분</button>
+                <button type="button" data-min="60">60분</button>
               </div>
+              <div class="legend">
+                <span class="lg lg-p">압력</span>
+                <span class="lg lg-f">유량 변경</span>
+                <span class="lg lg-x">판단 압력</span>
+              </div>
+            </div>
+            <div class="chart-wrap">
+              <svg id="chart" viewBox="0 0 960 300" role="img" aria-label="압력 트렌드"></svg>
+              <p class="chart-empty" id="chartEmpty">모니터 세션이 필요합니다 — 로그인하면 기록이 시작됩니다.</p>
+            </div>
+          </section>
 
-              <div class="run-side">
+          <div class="panel-row split">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>런 진행</h2>
+                <span class="stage-chip" id="runStageChip" data-stage="idle">대기</span>
+                <span class="head-note" id="runDetail">시작 전</span>
+              </div>
+              <div class="run-live">
                 <dl class="run-metrics">
+                  <div><dt>모드</dt><dd id="runModeNow">—</dd></div>
                   <div><dt>판단 압력</dt><dd id="runThreshold">—</dd></div>
                   <div><dt>현재 압력</dt><dd id="runPressureNow">—</dd></div>
                   <div><dt>최고 압력</dt><dd id="runPeak">—</dd></div>
                   <div><dt>단계 경과</dt><dd id="runElapsed">—</dd></div>
                 </dl>
                 <div class="run-actions">
-                  <button type="button" class="btn start" id="runStartBtn" disabled>START RUN</button>
-                  <button type="button" class="btn stop" id="runAbortBtn" disabled>ABORT RUN</button>
+                  <button type="button" class="btn primary" id="runStartBtn" disabled>런 시작</button>
+                  <button type="button" class="btn danger" id="runAbortBtn" disabled>런 중단</button>
+                  <p class="run-hint">설정은 <b>준비</b> 탭에서 바꿉니다. 감시는 서버에서 돌기 때문에 브라우저를 닫아도 유지됩니다.</p>
                 </div>
-                <p class="run-hint">유량을 바꾸면 압력이 내려오는 데 시간이 걸립니다. 각 단계는 압력이 판단값 아래로 내려온 뒤부터 감시를 시작합니다. 감시는 서버에서 돌기 때문에 브라우저를 닫아도 유지됩니다.</p>
               </div>
+            </section>
+
+            <section class="panel log-panel compact">
+              <div class="panel-head">
+                <h2>최근 이벤트</h2>
+                <span class="head-note rec">기록 중</span>
+              </div>
+              <div class="log" id="recentLog"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- 준비 -->
+        <section class="view" data-view="setup">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>런 설정</h2>
+              <span class="head-note">항목 이름에 마우스를 올리면 설명이 나옵니다.</span>
+            </div>
+            <div class="run-config">
+              <label class="field-box wide">
+                <span>모드</span>
+                <select id="runMode">
+                  <option value="lcp_jet">LCP 젯 — 물 채우기 → 실험 → 자동 정지</option>
+                  <option value="watch">감시만 — 실험이 끝나면 정지</option>
+                </select>
+              </label>
+              <label class="field-box" data-mode="lcp_jet" title="물을 빨리 채우기 위한 높은 유량. 물이 다 차면 자동으로 실험 유량으로 바뀝니다."><span>물 채울 때 유량</span><input id="runFillFlow" type="number" step="0.001" min="0" max="1"><em>mL/min</em></label>
+              <label class="field-box" data-mode="lcp_jet" title="물 채우는 중 압력이 이 값 이상이 되면 물이 다 차고 플런저가 시료에 닿았다고 판단해서 실험 유량으로 전환합니다. 채울 때 정상 압력보다 높고 절대 압력 상한보다 낮게 잡으세요."><span>물 다 찬 판단 압력</span><input id="runFillPressure" type="number" step="0.1" min="0.05"><em>MPa</em></label>
+              <label class="field-box" title="실제 실험을 진행할 유량."><span>실험 유량</span><input id="runFlow" type="number" step="0.001" min="0" max="1"><em>mL/min</em></label>
+              <label class="field-box" title="실험 중 압력이 이 값 이상이 되면 시료를 다 밀어냈다고 판단해서 펌프를 정지합니다. 실험 중 정상 압력보다 높고 절대 압력 상한보다 낮게 잡으세요."><span>실험 끝 판단 압력</span><input id="runPressure" type="number" step="0.1" min="0.05"><em>MPa</em></label>
+              <label class="field-box" title="어느 단계에서든 이 압력에 닿으면 무조건 런을 중단하고 펌프를 정지합니다. 판단 압력을 잘못 잡았거나 막혔을 때의 최후 방어선입니다. 장비 자체의 Pmax는 이보다 더 상위 방어선입니다."><span>절대 압력 상한</span><input id="runLimit" type="number" step="0.1" min="0.1"><em>MPa</em></label>
+              <label class="field-box" title="유량을 바꾼 직후에는 압력이 이전 값에서 내려오는 중이라 판단 압력을 이미 넘어 있습니다. 이 시간 동안은 감시하지 않습니다. 이 시간이 지나고 압력이 판단값 아래로 내려온 것이 확인되면 그때부터 감시를 시작합니다."><span>안정화 시간</span><input id="runSettle" type="number" step="5" min="0"><em>초</em></label>
+              <label class="field-box" title="한 단계가 이 시간을 넘기면 자동으로 중단하고 펌프를 정지합니다. 누수 등으로 압력이 영영 오르지 않을 때 무한정 도는 것을 막습니다. 0이면 제한 없음."><span>단계 제한 시간</span><input id="runTimeout" type="number" step="60" min="0"><em>초</em></label>
             </div>
           </section>
 
-          <section class="panel log-panel">
+          <div class="panel-row">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Method 파라미터</h2>
+                <span class="head-note" id="methodAlias">—</span>
+              </div>
+              <table class="data param">
+                <colgroup><col style="width:30%"><col style="width:22%"><col style="width:34%"><col style="width:14%"></colgroup>
+                <thead>
+                  <tr><th>항목</th><th>장비 값</th><th>새 값</th><th class="u">단위</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th>Flow</th><td id="methodFlow">—</td>
+                    <td class="ro">아래 명령 바에서 변경</td><td class="u">mL/min</td>
+                  </tr>
+                  <tr>
+                    <th>Tflow</th><td id="methodTflow">—</td>
+                    <td><input class="param-input" id="inTflow" data-param="tflow" type="number" step="0.01" min="0"></td>
+                    <td class="u">min</td>
+                  </tr>
+                  <tr>
+                    <th>Pmax</th><td id="methodPmax">—</td>
+                    <td><input class="param-input" id="inPmax" data-param="pmax" type="number" step="0.1" min="0"></td>
+                    <td class="u">MPa</td>
+                  </tr>
+                  <tr>
+                    <th>Pmin</th><td id="methodPmin">—</td>
+                    <td><input class="param-input" id="inPmin" data-param="pmin" type="number" step="0.1" min="0"></td>
+                    <td class="u">MPa</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="panel-foot">
+                <span class="hint" id="paramHint">—</span>
+                <button type="button" class="btn ghost-btn" id="revertBtn">되돌리기</button>
+                <button type="button" class="btn" id="applyBtn" disabled>적용</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>장비 정보</h2>
+                <button type="button" class="ghost" id="refreshBtn">다시 읽기</button>
+              </div>
+              <table class="data">
+                <tbody>
+                  <tr><th>컨트롤러</th><td id="controllerDetail" colspan="2">—</td></tr>
+                  <tr><th>펌프</th><td id="pumpDetail" colspan="2">—</td></tr>
+                  <tr><th>호스트 이름</th><td id="hostName" colspan="2">—</td></tr>
+                  <tr><th>시스템 상태</th><td id="systemState" colspan="2">—</td></tr>
+                  <tr><th>로그인 상태</th><td id="loginState" colspan="2">—</td></tr>
+                  <tr><th>마지막 조작</th><td id="lastOperator" colspan="2">—</td></tr>
+                </tbody>
+              </table>
+            </section>
+          </div>
+        </section>
+
+        <!-- 기록 -->
+        <section class="view" data-view="log">
+          <section class="panel log-panel full">
             <div class="panel-head">
-              <h2>EVENT LOG</h2>
-              <span class="head-note rec">RECORDING</span>
+              <h2>이벤트 기록</h2>
+              <span class="head-note rec">기록 중</span>
             </div>
             <div class="log" id="activity"></div>
           </section>
-        </div>
-
-        <div class="panel-row">
-          <section class="panel">
-            <div class="panel-head">
-              <h2>METHOD PARAMETERS</h2>
-              <span class="head-note" id="methodAlias">—</span>
-            </div>
-            <table class="data param">
-              <colgroup><col style="width:30%"><col style="width:22%"><col style="width:34%"><col style="width:14%"></colgroup>
-              <thead>
-                <tr><th>Parameter</th><th>Device</th><th>New value</th><th class="u">Unit</th></tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <th>Flow</th><td id="methodFlow">—</td>
-                  <td class="ro">커맨드바에서 변경</td><td class="u">mL/min</td>
-                </tr>
-                <tr>
-                  <th>Total flow time</th><td id="methodTflow">—</td>
-                  <td><input class="param-input" id="inTflow" data-param="tflow" type="number" step="0.01" min="0"></td>
-                  <td class="u">min</td>
-                </tr>
-                <tr>
-                  <th>Pressure max</th><td id="methodPmax">—</td>
-                  <td><input class="param-input" id="inPmax" data-param="pmax" type="number" step="0.1" min="0"></td>
-                  <td class="u">MPa</td>
-                </tr>
-                <tr>
-                  <th>Pressure min</th><td id="methodPmin">—</td>
-                  <td><input class="param-input" id="inPmin" data-param="pmin" type="number" step="0.1" min="0"></td>
-                  <td class="u">MPa</td>
-                </tr>
-              </tbody>
-            </table>
-            <div class="panel-foot">
-              <span class="hint" id="paramHint">—</span>
-              <button type="button" class="btn ghost-btn" id="revertBtn">REVERT</button>
-              <button type="button" class="btn" id="applyBtn" disabled>APPLY</button>
-            </div>
-          </section>
 
           <section class="panel">
             <div class="panel-head">
-              <h2>INSTRUMENT</h2>
-              <button type="button" class="ghost" id="refreshBtn">REFRESH</button>
+              <h2>마지막 런</h2>
+              <span class="head-note" id="lastRunStage">기록 없음</span>
             </div>
             <table class="data">
               <tbody>
-                <tr><th>Controller</th><td id="controllerDetail" colspan="2">—</td></tr>
-                <tr><th>Pump</th><td id="pumpDetail" colspan="2">—</td></tr>
-                <tr><th>Host name</th><td id="hostName" colspan="2">—</td></tr>
-                <tr><th>System state</th><td id="systemState" colspan="2">—</td></tr>
-                <tr><th>Login state</th><td id="loginState" colspan="2">—</td></tr>
-                <tr><th>Last operator</th><td id="lastOperator" colspan="2">—</td></tr>
+                <tr><th>모드</th><td id="lastRunMode" colspan="2">—</td></tr>
+                <tr><th>시작</th><td id="lastRunStarted" colspan="2">—</td></tr>
+                <tr><th>종료</th><td id="lastRunFinished" colspan="2">—</td></tr>
+                <tr><th>소요</th><td id="lastRunDuration" colspan="2">—</td></tr>
               </tbody>
             </table>
           </section>
-        </div>
-
+        </section>
       </main>
     </div>
 
     <div class="commandbar">
       <div class="cmd-group">
-        <span class="cmd-title">ACCESS</span>
-        <label class="input"><span>USER ID</span><input id="userId" autocomplete="username" spellcheck="false"></label>
-        <label class="input"><span>PASSWORD</span><input id="password" type="password" autocomplete="current-password"></label>
-        <button type="button" class="btn" id="loginBtn">LOG IN</button>
-        <button type="button" class="btn" id="logoutBtn" disabled>LOG OUT</button>
+        <span class="cmd-title">장비 접속</span>
+        <label class="input"><span>사용자</span><input id="userId" autocomplete="username" spellcheck="false"></label>
+        <label class="input"><span>비밀번호</span><input id="password" type="password" autocomplete="current-password"></label>
+        <button type="button" class="btn" id="loginBtn">로그인</button>
+        <button type="button" class="btn" id="logoutBtn" disabled>로그아웃</button>
       </div>
 
       <div class="cmd-group">
-        <span class="cmd-title">FLOW SETPOINT</span>
+        <span class="cmd-title">Flow 설정</span>
         <label class="input num"><span>0.0000 – 1.0000</span><input id="flowInput" type="number" min="0" max="1" step="0.001" inputmode="decimal"><em>mL/min</em></label>
-        <button type="button" class="btn" id="setFlowBtn" disabled>SET</button>
+        <button type="button" class="btn" id="setFlowBtn" disabled>적용</button>
       </div>
 
       <div class="cmd-group run-group">
-        <span class="cmd-title">PUMP A</span>
+        <span class="cmd-title">Pump A</span>
         <button type="button" class="btn start" id="startBtn" disabled>START</button>
         <button type="button" class="btn stop" id="stopBtn" disabled>STOP</button>
       </div>
@@ -233,11 +357,11 @@
 
     <footer class="statusbar">
       <span class="st" id="statusHost">—</span>
-      <span class="st" id="statusMode">READ ONLY</span>
-      <span class="st" id="statusRun">RUN idle</span>
-      <span class="st" id="statusCommand">no command issued</span>
+      <span class="st" id="statusMode">읽기 전용</span>
+      <span class="st" id="statusRun">런 대기</span>
+      <span class="st" id="statusCommand">보낸 명령 없음</span>
       <span class="st grow" id="statusMessage"></span>
-      <span class="st" id="lastUpdated">not updated</span>
+      <span class="st" id="lastUpdated">갱신 전</span>
     </footer>
 
   </div>
