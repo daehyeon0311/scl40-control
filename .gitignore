@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.log
+scl40_access_pin.txt
+scl40_probe_*.txt
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+
