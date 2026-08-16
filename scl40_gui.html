@@ -115,11 +115,11 @@
                   </select>
                 </label>
                 <label class="field-box" data-mode="lcp_jet" title="물을 빨리 채우기 위한 높은 유량. 물이 다 차면 자동으로 실험 유량으로 바뀝니다."><span>물 채울 때 유량</span><input id="runFillFlow" type="number" step="0.001" min="0" max="1"><em>mL/min</em></label>
-                <label class="field-box" data-mode="lcp_jet" title="물 채우는 중 압력이 이 값 이상이 되면 물이 다 차고 플런저가 샘플에 닿았다고 판단해서 실험 유량으로 전환합니다. 채울 때 정상 압력보다 높고 절대 압력 상한보다 낮게 잡으세요."><span>물 다 찬 판단 압력</span><input id="runFillPressure" type="number" step="0.1" min="0.05"><em>MPa</em></label>
+                <label class="field-box" data-mode="lcp_jet" title="물 채우는 중 압력이 이 값 이상이 되면 플런저가 밀리기 시작했다고 판단하여 즉시 실험 유량으로 전환합니다. 채울 때 정상 압력보다 높고 절대 압력 상한보다 낮게 잡으세요."><span>실험 유량 전환 압력</span><input id="runFillPressure" type="number" step="0.1" min="0.05"><em>MPa</em></label>
                 <label class="field-box" title="실제 실험을 진행할 유량."><span>실험 유량</span><input id="runFlow" type="number" step="0.001" min="0" max="1"><em>mL/min</em></label>
                 <label class="field-box" title="실험 중 압력이 이 값 이상이 되면 샘플을 다 밀어냈다고 판단해서 펌프를 정지합니다. 실험 중 정상 압력보다 높고 절대 압력 상한보다 낮게 잡으세요."><span>실험 끝 판단 압력</span><input id="runPressure" type="number" step="0.1" min="0.05"><em>MPa</em></label>
                 <label class="field-box" title="어느 단계에서든 이 압력에 닿으면 무조건 런을 중단하고 펌프를 정지합니다. 판단 압력을 잘못 잡았거나 막혔을 때의 최후 방어선입니다. 장비 자체의 Pmax는 이보다 더 상위 방어선입니다."><span>절대 압력 상한</span><input id="runLimit" type="number" step="0.1" min="0.1"><em>MPa</em></label>
-                <label class="field-box" title="유량을 바꾼 직후에는 압력이 이전 값에서 내려오는 중이라 판단 압력을 이미 넘어 있습니다. 이 시간 동안은 감시하지 않습니다. 이 시간이 지나고 압력이 판단값 아래로 내려온 것이 확인되면 그때부터 감시를 시작합니다."><span>안정화 시간</span><input id="runSettle" type="number" step="5" min="0"><em>s</em></label>
+                <label class="field-box" title="물 채우기는 지연 없이 즉시 감시합니다. 물이 찬 뒤 실험 유량으로 바꿀 때만 압력이 이전 값에서 내려오는 동안 이 시간만큼 기다립니다. 이후 압력이 실험 끝 판단값 아래로 내려온 것이 확인되면 실험 종료 감시를 시작합니다."><span>실험 단계 안정화 시간</span><input id="runSettle" type="number" step="5" min="0"><em>s</em></label>
                 <label class="field-box" title="한 단계가 이 시간을 넘기면 자동으로 중단하고 펌프를 정지합니다. 누수 등으로 압력이 영영 오르지 않을 때 무한정 도는 것을 막습니다. 0이면 제한 없음."><span>단계 제한 시간</span><input id="runTimeout" type="number" step="60" min="0"><em>s</em></label>
               </div>
 

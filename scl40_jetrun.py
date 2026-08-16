@@ -13,13 +13,13 @@ What this automates
 
 Both transitions fire on an absolute pressure the operator types in.
 
-Why each stage waits before watching
-------------------------------------
-Right after a flow change the pressure is still coming down from the previous
-stage - after 0.3 -> 0.046 mL/min it falls from about 3 MPa to about 0.5 MPa.
-If the trigger were live during that fall it would fire immediately. So a stage
+Why only the experiment stage waits before watching
+---------------------------------------------------
+The fill stage watches immediately: the first sample at or above the operator's
+fill threshold switches directly to the experiment flow. After that flow change
+the pressure is still coming down from the fill stage, so the experiment stage
 starts watching only once both conditions hold: the minimum settle time has
-passed, and the pressure has been seen below the trigger at least once.
+passed, and the pressure has been seen below the end threshold at least once.
 
 Other notes
 -----------
@@ -59,7 +59,7 @@ STAGE_LABELS = {
 FIELD_LIMITS: dict[str, dict[str, Any]] = {
     "fill_flow": {"label": "물 채울 때 유량", "unit": "mL/min", "min": Decimal("0"), "max": Decimal("1.0")},
     "run_flow": {"label": "실험 유량", "unit": "mL/min", "min": Decimal("0"), "max": Decimal("1.0")},
-    "fill_pressure": {"label": "물 다 찬 판단 압력", "unit": "MPa", "min": Decimal("0.05"), "max": Decimal("10.0")},
+    "fill_pressure": {"label": "실험 유량 전환 압력", "unit": "MPa", "min": Decimal("0.05"), "max": Decimal("10.0")},
     "run_pressure": {"label": "실험 끝 판단 압력", "unit": "MPa", "min": Decimal("0.05"), "max": Decimal("10.0")},
     "pressure_limit": {"label": "절대 압력 상한", "unit": "MPa", "min": Decimal("0.1"), "max": Decimal("10.0")},
 }
@@ -236,10 +236,13 @@ class JetRunController:
         with self._lock:
             self.stage = stage
             self._stage_started = time.monotonic()
-            self._watching = False
+            self._watching = stage == STAGE_FILL
             self._peak = None
             threshold = self._threshold(stage)
-            self._detail = f"압력이 {threshold} MPa 아래로 내려오면 감시를 시작합니다."
+            if stage == STAGE_FILL:
+                self._detail = f"즉시 감시 중 · 실험 유량 전환 압력 {threshold} MPa"
+            else:
+                self._detail = f"안정화 후 압력이 {threshold} MPa 아래로 내려오면 감시를 시작합니다."
 
     def _finish(self, stage: str, detail: str) -> None:
         with self._lock:
@@ -355,7 +358,12 @@ class JetRunController:
         settle = config["settle_seconds"]
 
         with self._lock:
-            if not self._watching:
+            if stage == STAGE_FILL:
+                # Filling must react to the first sample at/above the threshold.
+                # A fixed settle delay can miss a rapid pressure rise entirely.
+                self._watching = True
+                self._detail = f"즉시 감시 중 · {pressure:.2f} / {threshold:.2f} MPa"
+            elif not self._watching:
                 # Arm only after the pressure has settled below the trigger, so
                 # the fall from the previous stage cannot fire it.
                 if elapsed < settle:
@@ -373,7 +381,6 @@ class JetRunController:
                 return
 
         if stage == STAGE_FILL:
-            self._record("watching", f"감시 시작 · 기준 {threshold:.2f} MPa")
             self._advance_to_run(pressure, threshold)
         else:
             self._record("end_detected", f"실험 끝 · 압력 {pressure:.2f} MPa ≥ {threshold:.2f} MPa")
@@ -383,7 +390,7 @@ class JetRunController:
         run_flow = self.config["run_flow"]
         self._record(
             "fill_detected",
-            f"물 다 참 · 압력 {pressure:.2f} MPa ≥ {threshold:.2f} MPa "
+            f"전환 압력 도달 · {pressure:.2f} MPa ≥ {threshold:.2f} MPa "
             f"→ 실험 유량 {run_flow} mL/min으로 전환",
         )
         try:

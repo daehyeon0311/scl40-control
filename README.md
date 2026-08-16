@@ -52,16 +52,17 @@ server, so closing the browser does not stop it.
 
 | Stage | What it does | Leaves the stage when |
 |---|---|---|
-| 물 채우는 중 | writes the fill flow, starts the pump | pressure ≥ 물 다 찬 판단 압력 |
+| 물 채우는 중 | writes the fill flow, starts the pump | pressure ≥ 실험 유량 전환 압력 |
 | 실험 중 | writes the experiment flow, pump keeps running | pressure ≥ 실험 끝 판단 압력 → STOP |
 
 Both thresholds are absolute pressures typed in by the operator.
 
-After each flow change the pressure is still falling from the previous stage,
-so a stage starts watching only once the settle time has passed **and** the
-pressure has been seen below its threshold. That prevents the fall from firing
-the trigger. `절대 압력 상한` aborts the run from any stage, and each stage has
-a timeout.
+The fill stage watches immediately and switches to the experiment flow on the
+first pressure sample at or above `실험 유량 전환 압력`. After that switch the
+experiment stage starts watching only once the settle time has passed **and**
+the pressure has been seen below its end threshold. That prevents the falling
+pressure from falsely ending the run. `절대 압력 상한` aborts the run from any
+stage, and each stage has a timeout.
 
 `감시만` mode skips the fill stage for a pump the operator started themselves.
 
