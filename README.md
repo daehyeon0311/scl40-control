@@ -44,15 +44,13 @@ when the pressure jumps, and stop the pump when it jumps again.
 - Multiple GUI clients sharing one SCL session
 - Serialize device commands; concurrent commands receive HTTP 409
 - Display the last operator IP and command
-- Optional same-Wi-Fi access protected by a separate dashboard PIN
+- LAN access using the SCL-40 account login
 
 ## Run on Windows
 
-1. Copy `scl40_access_pin.example.txt` to `scl40_access_pin.txt` and replace its
-   contents with a private PIN of at least six characters.
-2. Double-click `START_SCL40_GUI.cmd`.
-3. Open `http://127.0.0.1:8765/`.
-4. Log in to the SCL-40. Factory defaults are `Admin` / `Admin`; installations
+1. Double-click `START_SCL40_GUI.cmd`.
+2. Open `http://127.0.0.1:8765/`.
+3. Log in to the SCL-40. Factory defaults are `Admin` / `Admin`; installations
    may have changed them.
 
 The GUI uses only the Python standard library. The supplied launcher looks for
@@ -144,8 +142,8 @@ The launcher listens on `0.0.0.0:8765`. Run
 firewall rule for the network values present during development. Review and
 update the IP addresses in the PowerShell script if the PC Wi-Fi address changes.
 
-Remote clients open `http://172.30.148.225:8765/` and enter the dashboard PIN.
-The PIN is separate from the SCL login. Do not commit `scl40_access_pin.txt`.
+Remote clients open `http://<server-wifi-ip>:8765/` and use the SCL-40 login.
+The supplied launcher does not enable the optional separate dashboard PIN.
 
 ## Confirmed device requests
 

@@ -679,10 +679,12 @@ def make_handler(
                 raise SCL40Error("잘못된 JSON 요청") from exc
 
         def _api_authorized(self) -> bool:
+            if not access_pin:
+                return True
             if self.client_address[0] in ("127.0.0.1", "::1"):
                 return True
             supplied = self.headers.get("X-SCL40-PIN", "")
-            return bool(access_pin) and secrets.compare_digest(supplied, access_pin)
+            return secrets.compare_digest(supplied, access_pin)
 
         def _require_api_access(self) -> bool:
             if self._api_authorized():
@@ -971,7 +973,7 @@ def main() -> int:
     parser.add_argument("host", nargs="?", default="192.168.200.99", help="SCL-40 IP address")
     parser.add_argument("--port", type=int, default=8765, help="local dashboard port")
     parser.add_argument("--bind", default="127.0.0.1", help="dashboard listen address")
-    parser.add_argument("--access-pin-file", type=Path, help="PIN file required for non-local API access")
+    parser.add_argument("--access-pin-file", type=Path, help="optional PIN file for an extra non-local API access check")
     parser.add_argument("--roles-file", type=Path, help="optional JSON mapping of SCL users to admin/operator/viewer")
     parser.add_argument("--history-db", type=Path, default=APP_DIR / "scl40_history.sqlite3", help="SQLite history database")
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
