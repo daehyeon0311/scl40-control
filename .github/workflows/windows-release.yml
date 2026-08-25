@@ -1,0 +1,81 @@
+name: Build Windows portable release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packager
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.15.0
+
+      - name: Run offline tests
+        run: python -m unittest -v test_scl40_multi.py
+
+      - name: Build portable executable
+        shell: pwsh
+        run: |
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --name SCL40-Control `
+            --add-data "scl40_gui.html;." `
+            --add-data "scl40_gui.css;." `
+            --add-data "scl40_gui.js;." `
+            --add-data "ibs_watermark.png;." `
+            scl40_launcher.py
+
+      - name: Assemble ZIP
+        shell: pwsh
+        run: |
+          $package = "dist/package"
+          New-Item -ItemType Directory -Path $package -Force | Out-Null
+          Copy-Item "dist/SCL40-Control.exe" $package
+          Copy-Item "OPEN_SETTINGS.cmd" $package
+          Copy-Item "scl40_settings.example.json" $package
+          Copy-Item "README.md" $package
+          Compress-Archive -Path "$package/*" -DestinationPath "dist/SCL40-Control-Windows-x64.zip" -Force
+          $hash = (Get-FileHash "dist/SCL40-Control-Windows-x64.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  SCL40-Control-Windows-x64.zip" | Set-Content "dist/SHA256SUMS.txt" -Encoding ascii
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SCL40-Control-Windows-x64
+          path: |
+            dist/SCL40-Control-Windows-x64.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Attach ZIP to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $assets = @("dist/SCL40-Control-Windows-x64.zip", "dist/SHA256SUMS.txt")
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+          } else {
+            gh release create $tag $assets --generate-notes --title "SCL40 Control $tag"
+          }

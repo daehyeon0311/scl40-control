@@ -14,3 +14,6 @@ venv/
 .vscode/
 Thumbs.db
 desktop.ini
+build/
+dist/
+*.spec

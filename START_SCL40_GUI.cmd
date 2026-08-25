@@ -1,8 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-if not exist "%SCL40_PY%" set "SCL40_PY="
-if not defined SCL40_PY where py >nul 2>nul && set "SCL40_PY=py -3"
+set "SCL40_PY="
+where py >nul 2>nul && set "SCL40_PY=py -3"
 if not defined SCL40_PY where python >nul 2>nul && set "SCL40_PY=python"
 if not defined SCL40_PY (
   echo Python 3 was not found.

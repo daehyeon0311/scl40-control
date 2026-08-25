@@ -1,0 +1,7 @@
+{
+  "scl40_host": "192.168.200.99",
+  "dashboard_port": 8765,
+  "allow_lan": true,
+  "enable_control": true,
+  "pressure_ceiling_mpa": 10.0
+}

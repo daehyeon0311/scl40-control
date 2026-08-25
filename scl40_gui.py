@@ -7,8 +7,10 @@ import argparse
 from decimal import Decimal, InvalidOperation
 import json
 import logging
+import os
 import secrets
 import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -26,7 +28,12 @@ from scl40_jetrun import JetRunController, RunError
 from scl40_store import AuditStore, CommunicationHealth
 
 
-APP_DIR = Path(__file__).resolve().parent
+SOURCE_DIR = Path(__file__).resolve().parent
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", SOURCE_DIR))
+if getattr(sys, "frozen", False):
+    DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SCL40-Control"
+else:
+    DATA_DIR = SOURCE_DIR
 XML_HEADER = '<?xml version="1.0" encoding="UTF-8"?>'
 CONFIG_REQUEST = XML_HEADER + '<Config/>'
 STATUS_REQUEST = (
@@ -645,7 +652,7 @@ def make_handler(
             self.wfile.write(data)
 
         def _file(self, name: str, content_type: str) -> None:
-            path = APP_DIR / name
+            path = RESOURCE_DIR / name
             try:
                 data = path.read_bytes()
             except OSError:
@@ -968,14 +975,14 @@ def make_handler(
     return Handler
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Shimadzu SCL-40 local dashboard")
     parser.add_argument("host", nargs="?", default="192.168.200.99", help="SCL-40 IP address")
     parser.add_argument("--port", type=int, default=8765, help="local dashboard port")
     parser.add_argument("--bind", default="127.0.0.1", help="dashboard listen address")
     parser.add_argument("--access-pin-file", type=Path, help="optional PIN file for an extra non-local API access check")
     parser.add_argument("--roles-file", type=Path, help="optional JSON mapping of SCL users to admin/operator/viewer")
-    parser.add_argument("--history-db", type=Path, default=APP_DIR / "scl40_history.sqlite3", help="SQLite history database")
+    parser.add_argument("--history-db", type=Path, default=DATA_DIR / "scl40_history.sqlite3", help="SQLite history database")
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
     parser.add_argument("--enable-control", action="store_true", help="enable START/STOP endpoints")
     parser.add_argument(
@@ -999,7 +1006,7 @@ def main() -> int:
         default=1.0,
         help="pressure watchdog polling interval in seconds (default: 1.0)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.pressure_ceiling <= 0:
         parser.error("--pressure-ceiling must be greater than zero")
@@ -1029,7 +1036,8 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    log_path = APP_DIR / f"scl40_gui_{datetime.now():%Y%m%d_%H%M%S}.log"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = DATA_DIR / f"scl40_gui_{datetime.now():%Y%m%d_%H%M%S}.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",

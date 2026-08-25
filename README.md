@@ -18,6 +18,32 @@ interface for LC-40i and LC-20Ai pumps without requiring LabSolutions or Clarity
 
 The screenshot uses the built-in simulator. No physical instrument was connected.
 
+## Install in three clicks
+
+No Python installation or command line is required for the Windows release.
+
+1. Open [GitHub Releases](https://github.com/daehyeon0311/scl40-control/releases/latest).
+2. Download and extract `SCL40-Control-Windows-x64.zip`.
+3. Double-click `SCL40-Control.exe`.
+
+On the first launch, a small setup window asks for the SCL-40 IP address and whether
+LAN access and control commands should be enabled. The choice is saved, the local
+server starts, and the dashboard opens automatically in the default browser. Later
+launches go directly to the dashboard. If it is already running, another double-click
+simply opens the existing page.
+
+Use `OPEN_SETTINGS.cmd` to reopen the first-run settings. Application data, logs, and
+SQLite history are stored in:
+
+```text
+%LOCALAPPDATA%\SCL40-Control
+```
+
+> [!NOTE]
+> The portable executable is built by the repository's public GitHub Actions workflow
+> and is currently unsigned. Windows SmartScreen may show an unknown-publisher warning.
+> The release includes `SHA256SUMS.txt` for integrity verification.
+
 ## Why this project exists
 
 The target experiment uses an HPLC pump to push water behind an LCP jet cartridge
@@ -69,7 +95,7 @@ The current development system has been observed with:
 
 Other firmware and module combinations must be validated independently.
 
-## Quick start on Windows
+## Run from source on Windows
 
 ### Requirements
 
@@ -370,6 +396,7 @@ alarms, CSV export, and audit persistence.
 | Path | Purpose |
 |---|---|
 | `scl40_gui.py` | HTTP server, session coordination, API, and CLI |
+| `scl40_launcher.py` | First-run setup and packaged Windows launcher |
 | `scl40_gui.html` / `.css` / `.js` | Responsive dashboard frontend |
 | `scl40_jetrun.py` | Automatic LCP and timed-run state machine |
 | `scl40_store.py` | SQLite telemetry, alarms, and audit storage |
@@ -377,7 +404,9 @@ alarms, CSV export, and audit persistence.
 | `scl40_sim.py` | Offline SCL-40 simulator |
 | `test_scl40_multi.py` | Regression test suite |
 | `START_SCL40_GUI.cmd` | Windows launcher |
+| `OPEN_SETTINGS.cmd` | Reopen packaged-app settings |
 | `ENABLE_SCL40_WIFI_FIREWALL.*` | Site-specific LAN firewall helper |
+| `.github/workflows/windows-release.yml` | Tested Windows EXE and Release build |
 
 ## Contributing
 
