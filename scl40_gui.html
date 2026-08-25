@@ -17,6 +17,7 @@
         <span class="unit-sub" id="pumpSummary">펌프 검색 중</span>
       </div>
       <div class="titlebar-status">
+        <span class="lcp-status" id="runHeaderStatus" data-stage="idle"><label>LCP JET</label><b id="runHeaderText">대기</b></span>
         <span class="link" id="linkState" data-state="wait"><i></i><b>CONNECTING</b></span>
         <span class="field"><label>LATENCY</label><output id="latency">—</output></span>
         <span class="field"><label>SESSION</label><output id="sessionUser">NONE</output></span>
@@ -31,53 +32,38 @@
     </div>
 
     <div class="workspace">
-
-      <aside class="readouts">
-        <div class="run-stage" id="runStageCard" data-stage="idle">
-          <span class="r-label">LCP JET RUN</span>
-          <span class="stage-value" id="runStageText">대기</span>
-          <span class="stage-note" id="runStageNote">런이 실행 중이 아닙니다.</span>
-          <div class="settle-bar" id="runSettleBar" hidden><i id="runSettleFill"></i></div>
-        </div>
-
-        <div class="pump-state" id="pumpState" data-state="unknown">
-          <span class="p-label" id="pumpStateLabel">PUMP A</span>
-          <span class="p-value" id="pumpStateText">UNKNOWN</span>
-          <span class="p-note" id="pumpStateNote">OpState —</span>
-        </div>
-
-      </aside>
-
       <main class="main">
 
-        <section class="panel pump-deck-panel">
-          <div class="panel-head">
-            <h2>PUMP DECK</h2>
-            <span class="head-note">카드를 선택하면 상세값과 유량 설정 대상이 바뀝니다.</span>
-          </div>
-          <div class="pump-deck" id="pumpDeck"></div>
-        </section>
+        <div class="overview-row">
+          <section class="panel pump-deck-panel">
+            <div class="panel-head">
+              <h2>PUMP DECK</h2>
+              <span class="head-note">카드를 선택하면 유량 설정 대상이 바뀝니다.</span>
+            </div>
+            <div class="pump-deck" id="pumpDeck"></div>
+          </section>
 
-        <section class="panel trend-panel">
-          <div class="panel-head">
-              <h2>PRESSURE TREND</h2>
-              <span class="head-note trend-note">모든 연결 펌프 · 선택과 무관</span>
-            <div class="segmented" id="rangeGroup">
-              <button type="button" data-min="5" class="on">5 min</button>
-              <button type="button" data-min="15">15 min</button>
-              <button type="button" data-min="60">60 min</button>
+          <section class="panel trend-panel">
+            <div class="panel-head">
+                <h2>PRESSURE TREND</h2>
+                <span class="head-note trend-note">모든 연결 펌프 · 선택과 무관</span>
+              <div class="segmented" id="rangeGroup">
+                <button type="button" data-min="5" class="on">5 min</button>
+                <button type="button" data-min="15">15 min</button>
+                <button type="button" data-min="60">60 min</button>
+              </div>
+              <div class="legend">
+                <span class="lg lg-a" id="legendPumpA">PUMP A</span>
+                <span class="lg lg-b" id="legendPumpB">PUMP B</span>
+                <span class="lg lg-x">판단 압력</span>
+              </div>
             </div>
-            <div class="legend">
-              <span class="lg lg-a" id="legendPumpA">PUMP A</span>
-              <span class="lg lg-b" id="legendPumpB">PUMP B</span>
-              <span class="lg lg-x">판단 압력</span>
+            <div class="chart-wrap">
+              <svg id="chart" viewBox="0 0 960 300" role="img" aria-label="Pump A 및 Pump B 압력 트렌드"></svg>
+              <p class="chart-empty" id="chartEmpty">모니터 세션이 필요합니다 — 로그인하면 기록이 시작됩니다.</p>
             </div>
-          </div>
-          <div class="chart-wrap">
-            <svg id="chart" viewBox="0 0 960 300" role="img" aria-label="Pump A 및 Pump B 압력 트렌드"></svg>
-            <p class="chart-empty" id="chartEmpty">모니터 세션이 필요합니다 — 로그인하면 기록이 시작됩니다.</p>
-          </div>
-        </section>
+          </section>
+        </div>
 
         <div class="panel-row split">
           <section class="panel run-panel">
