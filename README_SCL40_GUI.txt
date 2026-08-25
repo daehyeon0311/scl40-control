@@ -3,8 +3,8 @@ Shimadzu SCL-40 Local GUI
 
 Default target: 192.168.200.99
 Default local dashboard: http://127.0.0.1:8765/
-Same-Wi-Fi dashboard: http://172.30.148.225:8765/
-Remote access PIN: see scl40_access_pin.txt
+LAN dashboard: http://<server-wifi-ip>:8765/
+Remote clients use the SCL-40 account login; no separate access PIN is enabled.
 
 START
 -----

@@ -11,5 +11,5 @@ if not defined SCL40_PY (
   pause
   exit /b 1
 )
-%SCL40_PY% scl40_gui.py 192.168.200.99 --enable-control --bind 0.0.0.0 --access-pin-file scl40_access_pin.txt
+%SCL40_PY% scl40_gui.py 192.168.200.99 --enable-control --bind 0.0.0.0
 if errorlevel 1 pause
