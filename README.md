@@ -29,8 +29,10 @@ when the pressure jumps, and stop the pump when it jumps again.
 - System-wide Pump START/STOP (`Event.cgi` contains no confirmed UnitID)
 - Set the selected pump flow in the range `0.0000` to `5.0000 mL/min`
 - Verify a flow write by immediately reading Method 0 back
-- Rolling pressure/flow trend chart with 5, 15 and 60 minute windows. The trace
-  is held in the browser only, so a page reload restarts it.
+- Fixed pressure trend chart showing Pump A and Pump B together, with 5, 15 and
+  60 minute windows and server-side per-pump history.
+- Compact model-specific instrument drawings distinguish LC-40i and LC-20Ai
+  pump cards at a glance.
 - Multiple GUI clients sharing one SCL session
 - Serialize device commands; concurrent commands receive HTTP 409
 - Display the last operator IP and command

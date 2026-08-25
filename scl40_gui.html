@@ -80,28 +80,28 @@
         <section class="panel pump-deck-panel">
           <div class="panel-head">
             <h2>PUMP DECK</h2>
-            <span class="head-note">카드를 선택하면 상세값·트렌드·유량 설정 대상이 바뀝니다.</span>
+            <span class="head-note">카드를 선택하면 상세값과 유량 설정 대상이 바뀝니다.</span>
           </div>
           <div class="pump-deck" id="pumpDeck"></div>
         </section>
 
         <section class="panel trend-panel">
           <div class="panel-head">
-              <h2>TREND</h2>
-              <span class="stage-chip" id="trendPumpChip">PUMP A</span>
+              <h2>PRESSURE TREND</h2>
+              <span class="head-note trend-note">모든 연결 펌프 · 선택과 무관</span>
             <div class="segmented" id="rangeGroup">
               <button type="button" data-min="5" class="on">5 min</button>
               <button type="button" data-min="15">15 min</button>
               <button type="button" data-min="60">60 min</button>
             </div>
             <div class="legend">
-              <span class="lg lg-p">압력</span>
-              <span class="lg lg-f">유량 변경</span>
+              <span class="lg lg-a" id="legendPumpA">PUMP A</span>
+              <span class="lg lg-b" id="legendPumpB">PUMP B</span>
               <span class="lg lg-x">판단 압력</span>
             </div>
           </div>
           <div class="chart-wrap">
-            <svg id="chart" viewBox="0 0 960 300" role="img" aria-label="압력 및 유량 트렌드"></svg>
+            <svg id="chart" viewBox="0 0 960 300" role="img" aria-label="Pump A 및 Pump B 압력 트렌드"></svg>
             <p class="chart-empty" id="chartEmpty">모니터 세션이 필요합니다 — 로그인하면 기록이 시작됩니다.</p>
           </div>
         </section>
