@@ -750,9 +750,9 @@ table.data td.u {
 
 .commandbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 9px 10px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 9px 8px;
   background: var(--panel);
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
@@ -761,8 +761,8 @@ table.data td.u {
 .cmd-group {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  padding: 8px 12px 9px;
+  gap: 5px;
+  padding: 8px 8px 9px;
   border: 1px solid var(--rule-soft);
   border-radius: 2px;
   background: #fbfcfd;
@@ -782,6 +782,13 @@ table.data td.u {
 }
 
 .cmd-group.run-group { margin-left: auto; }
+
+/* Fit the three command groups on one row at common lab-console widths. */
+.access-group .input input { width: 105px; }
+.access-group .btn { min-width: 68px; padding-inline: 8px; }
+.flow-group .input select { width: 120px; min-width: 120px; }
+.flow-group .input.num input { width: 120px; }
+.flow-group .btn { min-width: 68px; padding-inline: 8px; }
 
 .input {
   display: flex;
@@ -846,8 +853,8 @@ table.data td.u {
 }
 
 .run-group .btn {
-  width: 112px;
-  min-width: 112px;
+  width: 104px;
+  min-width: 104px;
   padding: 0 10px;
   letter-spacing: .06em;
   white-space: nowrap;
@@ -957,6 +964,7 @@ table.data td.u {
   .overview-row .pump-deck { grid-template-columns: 1fr; }
   .cmd-group.run-group { margin-left: 0; }
   .cmd-group { flex-wrap: wrap; }
+  .commandbar { flex-wrap: wrap; }
   .input input, .input.num input { width: 100%; }
   .clock { display: none; }
 }
