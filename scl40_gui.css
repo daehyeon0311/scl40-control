@@ -1262,7 +1262,12 @@ body { background: var(--chrome); font-size: 13px; }
 .input { flex-direction: row; align-items: center; gap: 4px; letter-spacing: 0; }
 .input > span { white-space: nowrap; }
 .input input, .input select { height: 34px; padding: 0 9px; border-radius: 7px; }
-.input.num em { bottom: 11px; }
+.input.num em {
+  position: static;
+  flex: 0 0 auto;
+  margin-left: -2px;
+}
+.flow-group .input.num { flex: 0 0 260px; }
 .access-session { height: 34px; border: 0; border-radius: 7px; }
 
 .btn {
@@ -1327,7 +1332,14 @@ body { background: var(--chrome); font-size: 13px; }
 @media (max-width: 1120px) {
   .titlebar .field { display: none; }
   .panel-row.split { grid-template-columns: 1fr; }
-  .commandbar, .commandbar[data-auth="logged-in"] { grid-template-columns: minmax(0, .95fr) minmax(0, 1.15fr) minmax(180px, .55fr); }
+  .commandbar,
+  .commandbar[data-auth="logged-in"] {
+    grid-template-columns: minmax(0, .72fr) minmax(0, 1fr) minmax(240px, .65fr);
+  }
+  .cmd-title { display: none; }
+  .cmd-group .input > span { display: none; }
+  .flow-group .input.num { flex: 0 0 168px; }
+  .run-group .btn { padding-inline: 4px; font-size: 10px; }
 }
 
 @media (max-width: 820px) {
