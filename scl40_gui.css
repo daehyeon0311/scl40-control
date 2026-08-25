@@ -342,7 +342,9 @@ output, input, button, table { font: inherit; }
 
 .pump-card {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr;
+  align-items: start;
   gap: 9px 16px;
   padding: 12px;
   border: 1px solid var(--rule);
@@ -354,11 +356,13 @@ output, input, button, table { font: inherit; }
 .pump-card:hover { border-color: #9eabb9; }
 .pump-card.selected { border-color: var(--accent); border-left-color: var(--accent); background: #f8fbfe; }
 .pump-card[data-state="running"] { border-left-color: var(--run); }
+.pump-illustration { grid-row: 1 / 3; width: 68px; height: 68px; align-self: center; }
+.pump-card .pump-identity { display: flex; flex-direction: column; gap: 3px; align-self: center; text-align: left; }
 .pump-card .pump-name { font-weight: 700; font-size: 14px; }
 .pump-card .pump-unit { font: 700 10px var(--mono); color: var(--ink-3); letter-spacing: .1em; }
-.pump-card .pump-live { font: 700 10px var(--mono); color: var(--ink-2); }
+.pump-card .pump-live { align-self: center; font: 700 10px var(--mono); color: var(--ink-2); }
 .pump-card[data-state="running"] .pump-live { color: var(--run); }
-.pump-card dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.pump-card dl { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 7px 0 0; width: 100%; }
 .pump-card dl div { padding-top: 8px; border-top: 1px solid var(--rule-soft); }
 .pump-card dt { font-size: 9px; color: var(--ink-3); letter-spacing: .1em; }
 .pump-card dd { margin: 3px 0 0; font: 600 14px var(--mono); }
@@ -758,6 +762,8 @@ table.data.param th { width: auto; }
   color: var(--ink-2);
 }
 
+.trend-note { margin-left: 0; }
+
 .lg::before {
   content: "";
   display: inline-block;
@@ -768,9 +774,9 @@ table.data.param th { width: auto; }
   border-top: 2px solid currentColor;
 }
 
-.lg-p { color: var(--accent); }
-.lg-f { color: #b4690e; }
-.lg-f::before { border-top-style: dashed; }
+.lg-a { color: var(--accent); }
+.lg-b { color: #c26a13; }
+.lg-b::before { border-top-style: dashed; }
 .lg-x { color: var(--halt); }
 .lg-x::before { border-top-style: dashed; }
 

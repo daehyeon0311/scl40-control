@@ -49,15 +49,14 @@ const state = {
   simulated: false,
   pollMs: 5000,
   rangeMin: 5,
-  history: [],
+  historyByUnit: {},
   accessPin: sessionStorage.getItem("scl40AccessPin") || "",
   pollTimer: null,
-  trendSince: 0,
+  trendSinceByUnit: {},
   limits: {},
   pumps: [],
   selectedUnit: localStorage.getItem("scl40SelectedPump") || "A",
   lastData: null,
-  trendUnit: "",
   run: { stage: "idle", active: false },
   seenRunEvents: new Set(),
 };
@@ -177,13 +176,21 @@ function renderChart() {
   const now = Date.now();
   const spanMs = state.rangeMin * 60000;
   const from = now - spanMs;
-  const points = state.history.filter((p) => p.t >= from);
+  const series = state.pumps.map((pump, index) => ({
+    index,
+    unitId: pump.unit_id,
+    model: pump.model,
+    color: index === 0 ? "#0f5fa8" : index === 1 ? "#c26a13" : "#65717f",
+    dashed: index === 1,
+    points: (state.historyByUnit[pump.unit_id] || []).filter((point) => point.t >= from),
+  }));
+  const allPoints = series.flatMap((item) => item.points);
 
-  $("chartEmpty").hidden = points.length >= 2;
+  $("chartEmpty").hidden = series.some((item) => item.points.length >= 2);
   svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
   svg.replaceChildren();
 
-  const maxPressure = axisMax(Math.max(0, ...points.map((p) => p.p ?? 0)), 2);
+  const maxPressure = axisMax(Math.max(0, ...allPoints.map((point) => point.p ?? 0)), 2);
 
   const xOf = (t) => box.left + ((t - from) / spanMs) * (box.right - box.left);
   const yOfPressure = (v) => box.bottom - (v / maxPressure) * (box.bottom - box.top);
@@ -238,37 +245,28 @@ function renderChart() {
     "font-family": "Consolas, monospace", "font-size": 10, fill: "#0f5fa8",
   }, "MPa"));
 
-  // Flow is an operator setpoint, not a measured trace, so it is not plotted.
-  // Only the moments it changed are marked, to place the prime/run switch.
-  let previousTarget = null;
-  let lastLabelX = -Infinity;
-  for (const point of points) {
-    if (point.target === null || point.target === undefined) continue;
-    if (previousTarget !== null && Math.abs(point.target - previousTarget) > 1e-6) {
-      const x = xOf(point.t);
-      svg.append(svgEl("line", {
-        x1: x, y1: box.top, x2: x, y2: box.bottom,
-        stroke: "#b4690e", "stroke-width": 1, "stroke-dasharray": "3 3",
-      }));
-      if (x - lastLabelX > 96) {
-        const nearEdge = x > box.right - 96;
-        svg.append(svgEl("text", {
-          x: nearEdge ? x - 4 : x + 4, y: box.top + 12,
-          "text-anchor": nearEdge ? "end" : "start",
-          "font-family": "Consolas, monospace", "font-size": 10, fill: "#b4690e",
-        }, `${point.target.toFixed(4)} mL/min`));
-        lastLabelX = x;
-      }
-    }
-    previousTarget = point.target;
-  }
-
   const maxGap = Math.max(state.pollMs, 2000) * 3;
-  for (const d of buildSegments(points, (p) => p.p, xOf, yOfPressure, maxGap)) {
-    svg.append(svgEl("path", {
-      d, fill: "none", stroke: "#0f5fa8", "stroke-width": 1.6,
-      "stroke-linejoin": "round", "stroke-linecap": "round",
-    }));
+  for (const item of series) {
+    for (const d of buildSegments(item.points, (point) => point.p, xOf, yOfPressure, maxGap)) {
+      const attrs = {
+        d, fill: "none", stroke: item.color, "stroke-width": 1.8,
+        "stroke-linejoin": "round", "stroke-linecap": "round",
+      };
+      if (item.dashed) attrs["stroke-dasharray"] = "7 4";
+      svg.append(svgEl("path", attrs));
+    }
+
+    const last = item.points[item.points.length - 1];
+    if (last && last.p !== null) {
+      const cx = xOf(last.t);
+      const cy = yOfPressure(last.p);
+      svg.append(svgEl("circle", { cx, cy, r: 3, fill: item.color, stroke: "#fff", "stroke-width": 1 }));
+      const labelOffset = item.index % 2 === 0 ? 8 : 21;
+      svg.append(svgEl("text", {
+        x: Math.min(cx + 6, box.right - 42), y: Math.max(box.top + 11, cy - labelOffset),
+        "font-family": "Consolas, monospace", "font-size": 10, "font-weight": 700, fill: item.color,
+      }, `${item.unitId}  ${last.p.toFixed(2)}`));
+    }
   }
 
   // The pressure that ends the current stage.
@@ -285,28 +283,23 @@ function renderChart() {
     }, `판단 압력 ${run.threshold.toFixed(2)} MPa`));
   }
 
-  const last = points[points.length - 1];
-  if (last && last.p !== null) {
-    svg.append(svgEl("circle", { cx: xOf(last.t), cy: yOfPressure(last.p), r: 2.5, fill: "#0f5fa8" }));
-  }
 }
 
 /* Trend history lives on the server, so it survives reloads and every client
    sees the same trace. Each poll pulls only the samples it has not seen. */
 async function fetchTrend() {
-  if (state.trendUnit !== state.selectedUnit) {
-    state.history = [];
-    state.trendSince = 0;
-    state.trendUnit = state.selectedUnit;
-  }
-  const data = await api(`/api/trend?unit=${encodeURIComponent(state.selectedUnit)}&since=${state.trendSince}`);
-  for (const [t, p, f, target] of data.samples || []) {
-    state.history.push({ t: t * 1000, p, f, target });
-  }
-  state.trendSince = data.until || state.trendSince;
-  if (state.history.length > HISTORY_LIMIT) {
-    state.history.splice(0, state.history.length - HISTORY_LIMIT);
-  }
+  await Promise.all(state.pumps.map(async (pump) => {
+    const unitId = pump.unit_id;
+    const since = state.trendSinceByUnit[unitId] || 0;
+    const data = await api(`/api/trend?unit=${encodeURIComponent(unitId)}&since=${since}`);
+    const history = state.historyByUnit[unitId] || [];
+    for (const [t, p, f, target] of data.samples || []) {
+      history.push({ t: t * 1000, p, f, target });
+    }
+    state.trendSinceByUnit[unitId] = data.until || since;
+    if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
+    state.historyByUnit[unitId] = history;
+  }));
 }
 
 /* ---------- sudden-change indicators ---------- */
@@ -334,7 +327,8 @@ function flashReadout(channel) {
 
 function checkSuddenRise() {
   const now = Date.now();
-  const recent = state.history.filter((point) => point.t >= now - ALERT.windowMs);
+  const selectedHistory = state.historyByUnit[state.selectedUnit] || [];
+  const recent = selectedHistory.filter((point) => point.t >= now - ALERT.windowMs);
   if (recent.length < 2) return;
 
   const rise = (pick) => {
@@ -523,12 +517,49 @@ function selectPump(unitId) {
   if (!unitId || unitId === state.selectedUnit) return;
   state.selectedUnit = unitId;
   localStorage.setItem("scl40SelectedPump", unitId);
-  state.history = [];
-  state.trendSince = 0;
-  state.trendUnit = "";
   for (const input of paramInputs()) input.dataset.dirty = "0";
   if (state.lastData) render(state.lastData);
-  fetchTrend().then(renderChart).catch((error) => logLine("error", error.message));
+}
+
+function pumpIllustration(model, unitId) {
+  const modern = /40/i.test(model || "");
+  const svg = svgEl("svg", {
+    class: `pump-illustration ${modern ? "series-40" : "series-20"}`,
+    viewBox: "0 0 84 82", role: "img", "aria-label": `${model || "Pump"} 장비 그림`,
+  });
+  svg.append(svgEl("title", {}, `${model || "Pump"} · Unit ${unitId}`));
+  svg.append(svgEl("rect", {
+    x: modern ? 11 : 8, y: modern ? 4 : 8, width: modern ? 62 : 68, height: modern ? 73 : 68,
+    rx: modern ? 6 : 2, fill: modern ? "#f7fafc" : "#eef1f4", stroke: modern ? "#8997a6" : "#707b87",
+  }));
+  svg.append(svgEl("rect", {
+    x: modern ? 18 : 15, y: modern ? 13 : 15, width: modern ? 39 : 43, height: modern ? 24 : 18,
+    rx: modern ? 3 : 1, fill: modern ? "#dcecf8" : "#d8e7d2", stroke: modern ? "#76a6c9" : "#78906e",
+  }));
+  svg.append(svgEl("text", {
+    x: modern ? 37.5 : 36.5, y: modern ? 28 : 27, "text-anchor": "middle",
+    "font-family": "Consolas, monospace", "font-size": modern ? 7 : 6.5, "font-weight": 700,
+    fill: modern ? "#0f5fa8" : "#3d6438",
+  }, modern ? "LC-40i" : "LC-20Ai"));
+  svg.append(svgEl("circle", { cx: 65, cy: modern ? 19 : 17, r: 2.6, fill: "#2d8a54" }));
+  if (modern) {
+    svg.append(svgEl("rect", { x: 18, y: 45, width: 46, height: 21, rx: 3, fill: "#e8edf2", stroke: "#b3bec8" }));
+    svg.append(svgEl("circle", { cx: 30, cy: 55.5, r: 6.5, fill: "#d0d8df", stroke: "#8794a1" }));
+    svg.append(svgEl("circle", { cx: 52, cy: 55.5, r: 6.5, fill: "#d0d8df", stroke: "#8794a1" }));
+  } else {
+    for (let row = 0; row < 2; row += 1) {
+      for (let col = 0; col < 4; col += 1) {
+        svg.append(svgEl("rect", { x: 16 + col * 9, y: 39 + row * 8, width: 5, height: 4, rx: 1, fill: "#aab2ba" }));
+      }
+    }
+    svg.append(svgEl("circle", { cx: 63, cy: 46, r: 8, fill: "#d7dde2", stroke: "#7b8792" }));
+    for (let y = 60; y <= 68; y += 4) svg.append(svgEl("line", { x1: 16, y1: y, x2: 65, y2: y, stroke: "#9aa5af" }));
+  }
+  svg.append(svgEl("text", {
+    x: modern ? 65 : 61, y: 73, "text-anchor": "middle", "font-family": "Consolas, monospace",
+    "font-size": 8, "font-weight": 700, fill: "#596675",
+  }, unitId));
+  return svg;
 }
 
 function renderPumpDeck(pumps) {
@@ -543,17 +574,20 @@ function renderPumpDeck(pumps) {
     card.classList.toggle("selected", pump.unit_id === state.selectedUnit);
     card.dataset.state = monitor.pump_on === true ? "running" : monitor.pump_on === false ? "stopped" : "unknown";
 
+    const illustration = pumpIllustration(pump.model, pump.unit_id);
+    const identity = document.createElement("span");
+    identity.className = "pump-identity";
     const name = document.createElement("span");
     name.className = "pump-name";
     name.textContent = pump.model || "Unknown pump";
     const unit = document.createElement("span");
     unit.className = "pump-unit";
     unit.textContent = `UNIT ${pump.unit_id}`;
+    identity.append(name, unit);
     const live = document.createElement("span");
     live.className = "pump-live";
     live.textContent = monitor.pump_on === true ? "RUNNING" : monitor.pump_on === false ? "STOPPED" : "UNKNOWN";
-    unit.append(" · ", live);
-    card.append(name, unit);
+    card.append(illustration, identity, live);
 
     const metrics = document.createElement("dl");
     for (const [label, value] of [
@@ -621,7 +655,10 @@ function render(data) {
   setText("pumpSummary", state.pumps.map((item) => `${item.model} · Unit ${item.unit_id}`).join("  |  "), "NO PUMP");
   renderPumpDeck(state.pumps);
   syncPumpSelector(state.pumps);
-  setText("trendPumpChip", `PUMP ${state.selectedUnit}`);
+  const pumpA = state.pumps.find((item) => item.unit_id === "A");
+  const pumpB = state.pumps.find((item) => item.unit_id === "B");
+  setText("legendPumpA", pumpA ? `PUMP A · ${pumpA.model}` : "PUMP A");
+  setText("legendPumpB", pumpB ? `PUMP B · ${pumpB.model}` : "PUMP B");
   setText("pressureLabel", `PUMP ${state.selectedUnit} PRESSURE`);
   setText("flowLabel", `PUMP ${state.selectedUnit} FLOW`);
   setText("targetLabel", `PUMP ${state.selectedUnit} TARGET FLOW`);
@@ -701,7 +738,7 @@ function render(data) {
 
   setText("railHost", data.host);
   setText("railPoll", `${(state.pollMs / 1000).toFixed(0)} s`);
-  setText("railSamples", String(state.history.length));
+  setText("railSamples", state.pumps.map((item) => `${item.unit_id}:${(state.historyByUnit[item.unit_id] || []).length}`).join(" · "), "0");
   checkSuddenRise();
   renderChart();
 
@@ -724,6 +761,8 @@ function renderOffline(message) {
 async function refresh(manual = false) {
   try {
     const data = await api("/api/snapshot");
+    // The first trend request also needs the newly discovered pump list.
+    state.pumps = data.pumps || [];
     await fetchTrend();
     render(data);
     setStatusMessage(data.monitor?.available === false ? (data.monitor.reason || "") : "");
