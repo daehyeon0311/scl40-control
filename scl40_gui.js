@@ -52,6 +52,7 @@ const state = {
   historyByUnit: {},
   accessPin: sessionStorage.getItem("scl40AccessPin") || "",
   pollTimer: null,
+  chartFrame: null,
   trendSinceByUnit: {},
   limits: {},
   pumps: [],
@@ -283,6 +284,14 @@ function renderChart() {
     }, `판단 압력 ${run.threshold.toFixed(2)} MPa`));
   }
 
+}
+
+function scheduleChartRender() {
+  if (state.chartFrame !== null) return;
+  state.chartFrame = requestAnimationFrame(() => {
+    state.chartFrame = null;
+    renderChart();
+  });
 }
 
 /* Trend history lives on the server, so it survives reloads and every client
@@ -518,7 +527,7 @@ function selectPump(unitId) {
   state.selectedUnit = unitId;
   localStorage.setItem("scl40SelectedPump", unitId);
   for (const input of paramInputs()) input.dataset.dirty = "0";
-  if (state.lastData) render(state.lastData);
+  if (state.lastData) render(state.lastData, { chart: false });
 }
 
 function pumpIllustration(model, unitId) {
@@ -625,7 +634,7 @@ function syncPumpSelector(pumps) {
   select.value = state.selectedUnit;
 }
 
-function render(data) {
+function render(data, { chart = true } = {}) {
   state.lastData = data;
   state.host = data.host;
   state.controlEnabled = !!data.control_enabled;
@@ -740,7 +749,7 @@ function render(data) {
   setText("railPoll", `${(state.pollMs / 1000).toFixed(0)} s`);
   setText("railSamples", state.pumps.map((item) => `${item.unit_id}:${(state.historyByUnit[item.unit_id] || []).length}`).join(" · "), "0");
   checkSuddenRise();
-  renderChart();
+  if (chart) scheduleChartRender();
 
   const flowMax = Number(state.limits.flow?.max ?? 5);
   $("flowInput").max = String(flowMax);
@@ -892,13 +901,13 @@ $("rangeGroup").addEventListener("click", (event) => {
   state.rangeMin = Number(button.dataset.min);
   for (const node of $("rangeGroup").children) node.classList.toggle("on", node === button);
   setText("railWindow", `${state.rangeMin} min`);
-  renderChart();
+  scheduleChartRender();
 });
 
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(renderChart, 120);
+  resizeTimer = setTimeout(scheduleChartRender, 120);
 });
 
 setInterval(() => { $("clock").textContent = clock(new Date()); }, 1000);
@@ -906,5 +915,5 @@ $("clock").textContent = clock(new Date());
 applyRunDefaults(null);
 updateRunMode();
 logLine("info", "콘솔 시작 · SCL-40 상태 조회");
-renderChart();
+scheduleChartRender();
 refresh(true);

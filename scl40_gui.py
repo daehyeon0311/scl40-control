@@ -491,6 +491,31 @@ class CommandBusy(RuntimeError):
     pass
 
 
+class SnapshotCache:
+    """Coalesce near-simultaneous dashboard polls into one instrument read."""
+
+    def __init__(self, ttl: float = 0.8) -> None:
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        self._value: dict[str, Any] | None = None
+        self._stored_at = 0.0
+
+    def get(self, producer: Any) -> tuple[dict[str, Any], bool]:
+        with self._lock:
+            now = time.monotonic()
+            if self._value is not None and now - self._stored_at <= self._ttl:
+                return self._value, False
+            value = producer()
+            self._value = value
+            self._stored_at = time.monotonic()
+            return value, True
+
+    def invalidate(self) -> None:
+        with self._lock:
+            self._value = None
+            self._stored_at = 0.0
+
+
 class CommandBroker:
     """Serialises every instrument write, whoever issues it.
 
@@ -541,6 +566,8 @@ def make_handler(
     access_pin: str = "",
     simulated: bool = False,
 ):
+    snapshot_cache = SnapshotCache()
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "SCL40LocalGUI/0.1"
 
@@ -612,16 +639,18 @@ def make_handler(
                 self._json(200, {"ok": True, "unit_id": unit_id, "samples": samples, "until": until})
             elif self.path == "/api/snapshot":
                 try:
-                    snapshot = client.snapshot()
-                    for pump in snapshot.get("pumps", []):
-                        monitor = pump.get("monitor") or {}
-                        if monitor.get("available"):
-                            recorder.record(
-                                monitor.get("pressure"), monitor.get("flow"), monitor.get("target_flow"),
-                                pump.get("unit_id") or "A",
-                            )
+                    snapshot, fresh = snapshot_cache.get(client.snapshot)
+                    if fresh:
+                        for pump in snapshot.get("pumps", []):
+                            monitor = pump.get("monitor") or {}
+                            if monitor.get("available"):
+                                recorder.record(
+                                    monitor.get("pressure"), monitor.get("flow"), monitor.get("target_flow"),
+                                    pump.get("unit_id") or "A",
+                                )
                     self._json(200, {
                         **snapshot,
+                        "snapshot_cached": not fresh,
                         "control_enabled": control_enabled,
                         "control_activity": broker.activity(),
                         "simulated": simulated,
@@ -651,11 +680,13 @@ def make_handler(
                 body = self._body()
                 if self.path == "/api/login":
                     result = client.login(str(body.get("user_id", "")), str(body.get("password", "")))
+                    snapshot_cache.invalidate()
                     log.warning("SCL-40 login succeeded for user %s", result["user_id"])
                     self._json(200, {"ok": True, **result})
                     return
                 if self.path == "/api/logout":
                     result = client.logout()
+                    snapshot_cache.invalidate()
                     log.warning("SCL-40 logout completed")
                     self._json(200, {"ok": True, **result})
                     return
@@ -669,6 +700,7 @@ def make_handler(
                         action, self.client_address[0],
                         lambda: client.send_pump(start=(action == "START")),
                     )
+                    snapshot_cache.invalidate()
                     if action == "STOP":
                         jetrun.abort("수동 STOP", self.client_address[0], stop_pump=False)
                     self._json(200, {"ok": True, "action": action, **result})
@@ -686,6 +718,7 @@ def make_handler(
                         f"SET METHOD {unit_id}", self.client_address[0],
                         lambda: client.set_method_params(params, unit_id),
                     )
+                    snapshot_cache.invalidate()
                     changes = ", ".join(
                         f"{item['label']} {item['previous']} -> {item['value']} {item['unit']}"
                         for item in result["applied"].values() if item["changed"]
@@ -699,6 +732,7 @@ def make_handler(
                     if not self._control_allowed(body, "START_RUN"):
                         return
                     state = jetrun.start(body, self.client_address[0])
+                    snapshot_cache.invalidate()
                     self._json(200, {"ok": True, "run": state})
                     return
 
@@ -710,6 +744,7 @@ def make_handler(
                         str(body.get("reason") or "사용자 중단"),
                         self.client_address[0],
                     )
+                    snapshot_cache.invalidate()
                     self._json(200, {"ok": True, "run": state})
                     return
 

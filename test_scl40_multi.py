@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import unittest
 
-from scl40_gui import SCL40Client, TrendRecorder
+from scl40_gui import SCL40Client, SnapshotCache, TrendRecorder
 from scl40_sim import start_simulator
 
 
@@ -64,6 +64,25 @@ class MultiPumpTests(unittest.TestCase):
         b_samples, _ = recorder.series(unit_id="B")
         self.assertEqual(a_samples[0][1:], [1.2, 0.1, 0.1])
         self.assertEqual(b_samples[0][1:], [2.3, 0.2, 0.2])
+
+    def test_snapshot_cache_reuses_and_invalidates(self) -> None:
+        cache = SnapshotCache(ttl=10)
+        calls = []
+
+        def produce():
+            calls.append(1)
+            return {"sequence": len(calls)}
+
+        first, first_fresh = cache.get(produce)
+        second, second_fresh = cache.get(produce)
+        cache.invalidate()
+        third, third_fresh = cache.get(produce)
+
+        self.assertTrue(first_fresh)
+        self.assertFalse(second_fresh)
+        self.assertEqual(first, second)
+        self.assertTrue(third_fresh)
+        self.assertEqual(third["sequence"], 2)
 
 
 if __name__ == "__main__":
