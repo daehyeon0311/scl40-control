@@ -20,6 +20,10 @@ when the pressure jumps, and stop the pump when it jumps again.
 
 ## Features
 
+- Operation-first responsive dashboard: pump deck and pressure trend stay visible,
+  while advanced settings, instrument details and audit tools collapse into one section
+- In-app command confirmations keep START/STOP decisions inside the dashboard instead
+  of using browser pop-ups
 - Detect SCL-40 and connected pumps
 - Detect and display every pump reported by SCL-40 Config
 - Read Method 0 flow and pressure limits independently by UnitID

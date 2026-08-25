@@ -17,7 +17,7 @@
         <span class="unit-sub" id="pumpSummary">펌프 검색 중</span>
       </div>
       <div class="titlebar-status">
-        <span class="lcp-status" id="runHeaderStatus" data-stage="idle"><label>LCP JET</label><b id="runHeaderText">대기</b></span>
+        <span class="lcp-status" id="runHeaderStatus" data-stage="idle"><label>자동 운전</label><b id="runHeaderText">대기</b></span>
         <span class="link" id="linkState" data-state="wait"><i></i><b>CONNECTING</b></span>
         <span class="field"><label>LATENCY</label><output id="latency">—</output></span>
         <span class="field"><label>SESSION</label><output id="sessionUser">NONE</output></span>
@@ -37,15 +37,15 @@
         <div class="overview-row">
           <section class="panel pump-deck-panel">
             <div class="panel-head">
-              <h2>PUMP DECK</h2>
-              <span class="head-note">카드를 선택하면 유량 설정 대상이 바뀝니다.</span>
+              <h2>펌프</h2>
+              <span class="head-note">카드를 선택하면 아래 유량 설정 대상이 바뀝니다.</span>
             </div>
             <div class="pump-deck" id="pumpDeck"></div>
           </section>
 
           <section class="panel trend-panel">
             <div class="panel-head">
-                <h2>PRESSURE TREND</h2>
+                <h2>압력 추이</h2>
               <div class="segmented" id="rangeGroup">
                 <button type="button" data-min="5" class="on">5 min</button>
                 <button type="button" data-min="15">15 min</button>
@@ -69,7 +69,7 @@
         <div class="panel-row split">
           <section class="panel run-panel" id="runPanel" data-active="false">
             <div class="panel-head">
-              <h2>LCP JET RUN</h2>
+              <h2>자동 운전</h2>
               <span class="stage-chip" id="runStageChip" data-stage="idle">대기</span>
               <span class="head-note" id="runDetail">시작 전</span>
             </div>
@@ -116,17 +116,23 @@
 
           <section class="panel log-panel">
             <div class="panel-head">
-              <h2>EVENT LOG</h2>
-              <span class="head-note rec">RECORDING</span>
+              <h2>운전 기록</h2>
+              <span class="head-note rec">실시간</span>
             </div>
             <div class="log" id="activity"></div>
           </section>
         </div>
 
+        <details class="advanced-section">
+          <summary>
+            <span><b>고급 설정 및 기록</b><small>운전 조건 · 장비 정보 · 안전 · 감사 기록</small></span>
+            <i aria-hidden="true"></i>
+          </summary>
+          <div class="advanced-content">
         <div class="panel-row info-row">
           <section class="panel">
             <div class="panel-head">
-              <h2>METHOD PARAMETERS</h2>
+              <h2>운전 조건</h2>
               <span class="head-note" id="methodAlias">—</span>
             </div>
             <table class="data param">
@@ -160,7 +166,7 @@
 
           <section class="panel">
             <div class="panel-head">
-              <h2>INSTRUMENT</h2>
+              <h2>장비 정보</h2>
               <button type="button" class="ghost" id="refreshBtn">REFRESH</button>
             </div>
             <table class="data">
@@ -177,8 +183,8 @@
 
           <section class="panel">
             <div class="panel-head">
-              <h2>ACQUISITION</h2>
-              <span class="head-note">LIVE HISTORY</span>
+              <h2>데이터 수집</h2>
+              <span class="head-note">실시간 기록</span>
             </div>
             <table class="data">
               <tbody>
@@ -194,7 +200,7 @@
         <div class="panel-row system-row" id="managementRow">
           <section class="panel">
             <div class="panel-head">
-              <h2>SAFETY &amp; COMMUNICATION</h2>
+              <h2>안전 및 통신</h2>
               <span class="health-chip" id="commState" data-state="wait">WAIT</span>
             </div>
             <table class="data">
@@ -210,8 +216,8 @@
 
           <section class="panel">
             <div class="panel-head">
-              <h2>AUDIT &amp; EXPORT</h2>
-              <span class="head-note">SQLITE · HASH CHAIN</span>
+              <h2>기록 및 내보내기</h2>
+              <span class="head-note">SQLite · 무결성 기록</span>
             </div>
             <div class="record-summary">
               <span><b id="recordSamples">0</b> samples</span>
@@ -226,29 +232,31 @@
             <div class="audit-list" id="auditList"><p class="empty-note">기록된 이벤트가 없습니다.</p></div>
           </section>
         </div>
+          </div>
+        </details>
 
       </main>
     </div>
 
     <div class="commandbar" id="commandbar" data-auth="logged-out">
       <div class="cmd-group access-group">
-        <span class="cmd-title">ACCESS</span>
+        <span class="cmd-title">로그인</span>
         <span class="access-session" id="accessSession" hidden><i></i><b>NONE</b></span>
-        <label class="input access-credential"><span>USER ID</span><input id="userId" autocomplete="username" spellcheck="false"></label>
-        <label class="input access-credential"><span>PASSWORD</span><input id="password" type="password" autocomplete="current-password"></label>
+        <label class="input access-credential"><span>사용자 ID</span><input id="userId" autocomplete="username" spellcheck="false"></label>
+        <label class="input access-credential"><span>비밀번호</span><input id="password" type="password" autocomplete="current-password"></label>
         <button type="button" class="btn" id="loginBtn">LOG IN</button>
         <button type="button" class="btn" id="logoutBtn" disabled>LOG OUT</button>
       </div>
 
       <div class="cmd-group flow-group">
-        <span class="cmd-title">FLOW SETPOINT</span>
+        <span class="cmd-title">유량 설정</span>
         <label class="input select"><span>PUMP</span><select id="flowPumpSelect"></select></label>
         <label class="input num"><span id="flowRangeLabel">0.0000 – 5.0000</span><input id="flowInput" type="number" min="0" max="5" step="0.001" inputmode="decimal"><em>mL/min</em></label>
         <button type="button" class="btn" id="setFlowBtn" disabled>SET</button>
       </div>
 
       <div class="cmd-group run-group">
-        <span class="cmd-title">SYSTEM PUMPS · ALL UNITS</span>
+        <span class="cmd-title">전체 펌프</span>
         <button type="button" class="btn start" id="startBtn" disabled>START ALL</button>
         <button type="button" class="btn stop" id="stopBtn" disabled>STOP ALL</button>
       </div>
@@ -262,6 +270,20 @@
       <span class="st grow" id="statusMessage"></span>
       <span class="st" id="lastUpdated">not updated</span>
     </footer>
+
+    <div class="action-dialog" id="actionDialog" hidden role="dialog" aria-modal="true" aria-labelledby="actionDialogTitle" aria-describedby="actionDialogMessage">
+      <div class="action-dialog-card">
+        <span class="action-dialog-icon" id="actionDialogIcon" aria-hidden="true">!</span>
+        <div class="action-dialog-copy">
+          <h2 id="actionDialogTitle">명령 확인</h2>
+          <p id="actionDialogMessage"></p>
+        </div>
+        <div class="action-dialog-actions">
+          <button type="button" class="btn ghost-btn" id="actionDialogCancel">취소</button>
+          <button type="button" class="btn" id="actionDialogConfirm">확인</button>
+        </div>
+      </div>
+    </div>
 
   </div>
   <script src="scl40_gui.js"></script>
