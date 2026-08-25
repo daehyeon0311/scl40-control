@@ -209,83 +209,12 @@ output, input, button, table { font: inherit; }
   top: 10px;
 }
 
-.readout {
-  position: relative;
-  padding: 11px 13px 12px;
-  background: var(--panel);
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--ink-3);
-  border-radius: 2px;
-}
-
-.readout[data-channel="pressure"] { border-left-color: var(--accent); }
-.readout[data-channel="flow"]     { border-left-color: #b4690e; }
-
 .r-label {
   display: block;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: .16em;
   color: var(--ink-3);
-}
-
-.r-value {
-  display: block;
-  margin-top: 6px;
-  font-family: var(--mono);
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -.02em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.05;
-}
-
-.r-unit {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-2);
-}
-
-.r-note {
-  display: block;
-  margin-top: 7px;
-  padding-top: 7px;
-  border-top: 1px solid var(--rule-soft);
-  font-size: 10px;
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-
-.readout.stale .r-value { color: var(--ink-3); }
-
-/* A sudden rise blinks the readout like an indicator lamp for ~2.5 s. */
-@keyframes readout-blink {
-  0%, 49% { background: var(--panel); }
-  50%, 100% { background: var(--flash-bg); }
-}
-
-@keyframes readout-blink-text {
-  0%, 49% { color: var(--ink); }
-  50%, 100% { color: var(--flash-ink); }
-}
-
-.readout.alert-flash {
-  --flash-bg: var(--warn-soft);
-  --flash-ink: var(--warn);
-  border-color: var(--flash-ink);
-  animation: readout-blink .5s steps(1, end) 5;
-}
-
-.readout[data-channel="pressure"].alert-flash {
-  --flash-bg: var(--halt-soft);
-  --flash-ink: var(--halt);
-}
-
-.readout.alert-flash .r-value { animation: readout-blink-text .5s steps(1, end) 5; }
-
-@media (prefers-reduced-motion: reduce) {
-  .readout.alert-flash { animation: none; background: var(--flash-bg); }
-  .readout.alert-flash .r-value { animation: none; color: var(--flash-ink); }
 }
 
 .pump-state {
