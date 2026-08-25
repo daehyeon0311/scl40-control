@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import unittest
 
-from scl40_gui import SCL40Client, SnapshotCache, TrendRecorder
+from scl40_gui import SCL40Client, SCL40Error, SnapshotCache, TrendRecorder
 from scl40_sim import start_simulator
 
 
@@ -49,6 +49,11 @@ class MultiPumpTests(unittest.TestCase):
         self.assertEqual(result["unit_id"], "B")
         self.assertEqual(result["method"]["flow"], "0.350")
         self.assertEqual(self.client.get_method("A")["flow"], before_a)
+
+    def test_tflow_is_not_user_writable(self) -> None:
+        self.assertNotIn("tflow", self.client.limit_table())
+        with self.assertRaisesRegex(SCL40Error, "변경할 수 없습니다"):
+            self.client.set_method_params({"tflow": "1.0000"}, "A")
 
     def test_system_event_changes_both_operation_states(self) -> None:
         self.client.send_pump(True)

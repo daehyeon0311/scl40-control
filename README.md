@@ -22,7 +22,7 @@ when the pressure jumps, and stop the pump when it jumps again.
 
 - Detect SCL-40 and connected pumps
 - Detect and display every pump reported by SCL-40 Config
-- Read Method 0 flow, Tflow and pressure limits independently by UnitID
+- Read Method 0 flow and pressure limits independently by UnitID
 - SCL web login and Monitor session
 - Read pressure, flow and logical operation state independently for Pump A/B
 - Select Pump A or Pump B for details, trend and flow setting
@@ -168,8 +168,9 @@ shown; Unit B uses `B` and the precision returned by its Method response):
 ```
 
 Write the pressure limits. Element names and their position come from the
-instrument's own Method read response; `Flow` and `Tflow` are always resent
-because that pairing is the confirmed request shape. **Not yet executed against
+instrument's own Method read response; `Flow` and the device-reported `Tflow`
+are always resent because that pairing is the confirmed request shape. `Tflow`
+is not exposed as a user-writable dashboard parameter. **Not yet executed against
 the real instrument** - check the exact request in the log before the first
 write:
 
