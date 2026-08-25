@@ -14,7 +14,7 @@
         <span class="vendor">SHIMADZU</span>
         <span class="unit" id="controllerModel">SCL-40</span>
         <span class="divider"></span>
-        <span class="unit-sub"><span id="pumpModel">LC-40i</span> <em id="pumpUnit">Unit A</em></span>
+        <span class="unit-sub" id="pumpSummary">펌프 검색 중</span>
       </div>
       <div class="titlebar-status">
         <span class="link" id="linkState" data-state="wait"><i></i><b>CONNECTING</b></span>
@@ -41,25 +41,25 @@
         </div>
 
         <div class="readout" data-channel="pressure">
-          <span class="r-label">PRESSURE</span>
+          <span class="r-label" id="pressureLabel">PUMP A PRESSURE</span>
           <span class="r-value" id="pressure">–.––</span>
           <span class="r-unit">MPa</span>
           <span class="r-note" id="pressureNote">limit —</span>
         </div>
         <div class="readout" data-channel="flow">
-          <span class="r-label">FLOW</span>
+          <span class="r-label" id="flowLabel">PUMP A FLOW</span>
           <span class="r-value" id="flow">–.––––</span>
           <span class="r-unit">mL/min</span>
           <span class="r-note" id="flowNote">measured</span>
         </div>
         <div class="readout" data-channel="target">
-          <span class="r-label">TARGET FLOW</span>
+          <span class="r-label" id="targetLabel">PUMP A TARGET FLOW</span>
           <span class="r-value" id="targetFlow">–.––––</span>
           <span class="r-unit">mL/min</span>
           <span class="r-note" id="targetNote">method 0</span>
         </div>
         <div class="pump-state" id="pumpState" data-state="unknown">
-          <span class="p-label">PUMP A</span>
+          <span class="p-label" id="pumpStateLabel">PUMP A</span>
           <span class="p-value" id="pumpStateText">UNKNOWN</span>
           <span class="p-note" id="pumpStateNote">OpState —</span>
         </div>
@@ -77,9 +77,18 @@
 
       <main class="main">
 
+        <section class="panel pump-deck-panel">
+          <div class="panel-head">
+            <h2>PUMP DECK</h2>
+            <span class="head-note">카드를 선택하면 상세값·트렌드·유량 설정 대상이 바뀝니다.</span>
+          </div>
+          <div class="pump-deck" id="pumpDeck"></div>
+        </section>
+
         <section class="panel trend-panel">
           <div class="panel-head">
-            <h2>TREND</h2>
+              <h2>TREND</h2>
+              <span class="stage-chip" id="trendPumpChip">PUMP A</span>
             <div class="segmented" id="rangeGroup">
               <button type="button" data-min="5" class="on">5 min</button>
               <button type="button" data-min="15">15 min</button>
@@ -106,6 +115,7 @@
             </div>
 
             <div class="run-body">
+              <p class="multi-pump-warning" id="multiPumpWarning" hidden>다중 펌프에서는 SYSTEM START가 모든 펌프를 함께 켭니다. 자동운전 역할이 정의될 때까지 LCP JET RUN은 잠겨 있습니다.</p>
               <div class="run-config">
                 <label class="field-box wide">
                   <span>모드</span>
@@ -134,7 +144,7 @@
                   <button type="button" class="btn start" id="runStartBtn" disabled>START RUN</button>
                   <button type="button" class="btn stop" id="runAbortBtn" disabled>ABORT RUN</button>
                 </div>
-                <p class="run-hint">유량을 바꾸면 압력이 내려오는 데 시간이 걸립니다. 각 단계는 압력이 판단값 아래로 내려온 뒤부터 감시를 시작합니다. 감시는 서버에서 돌기 때문에 브라우저를 닫아도 유지됩니다.</p>
+                <p class="run-hint">물 채우기는 즉시 감시하고, 실험 단계만 압력이 판단값 아래로 내려온 뒤 감시합니다. 감시는 서버에서 돌기 때문에 브라우저를 닫아도 유지됩니다.</p>
               </div>
             </div>
           </section>
@@ -196,7 +206,7 @@
             <table class="data">
               <tbody>
                 <tr><th>Controller</th><td id="controllerDetail" colspan="2">—</td></tr>
-                <tr><th>Pump</th><td id="pumpDetail" colspan="2">—</td></tr>
+                <tr><th>Pumps</th><td id="pumpDetail" colspan="2">—</td></tr>
                 <tr><th>Host name</th><td id="hostName" colspan="2">—</td></tr>
                 <tr><th>System state</th><td id="systemState" colspan="2">—</td></tr>
                 <tr><th>Login state</th><td id="loginState" colspan="2">—</td></tr>
@@ -220,14 +230,15 @@
 
       <div class="cmd-group">
         <span class="cmd-title">FLOW SETPOINT</span>
-        <label class="input num"><span>0.0000 – 1.0000</span><input id="flowInput" type="number" min="0" max="1" step="0.001" inputmode="decimal"><em>mL/min</em></label>
+        <label class="input select"><span>TARGET PUMP</span><select id="flowPumpSelect"></select></label>
+        <label class="input num"><span id="flowRangeLabel">0.0000 – 5.0000</span><input id="flowInput" type="number" min="0" max="5" step="0.001" inputmode="decimal"><em>mL/min</em></label>
         <button type="button" class="btn" id="setFlowBtn" disabled>SET</button>
       </div>
 
       <div class="cmd-group run-group">
-        <span class="cmd-title">PUMP A</span>
-        <button type="button" class="btn start" id="startBtn" disabled>START</button>
-        <button type="button" class="btn stop" id="stopBtn" disabled>STOP</button>
+        <span class="cmd-title">SYSTEM PUMPS · ALL UNITS</span>
+        <button type="button" class="btn start" id="startBtn" disabled>START ALL</button>
+        <button type="button" class="btn stop" id="stopBtn" disabled>STOP ALL</button>
       </div>
     </div>
 

@@ -22,13 +22,19 @@ Run ENABLE_SCL40_WIFI_FIREWALL.cmd once and accept the Windows administrator
 prompt. The firewall rule permits only remote addresses in 172.30.148.0/24 to
 reach this PC's Wi-Fi address 172.30.148.225 on TCP port 8765.
 
-CONTROL MODE
-------------
-START and STOP are enabled by START_SCL40_GUI.cmd. To send one command:
+MULTI-PUMP CONTROL MODE
+-----------------------
+The dashboard displays LC-40i Unit A and LC-20Ai Unit B as separate pump cards.
+Select a card to view its pressure/flow trend or set that pump's target flow.
+
+START ALL and STOP ALL are enabled by START_SCL40_GUI.cmd. The confirmed SCL-40
+Event request has no UnitID, so these buttons affect the pump system rather than
+one selected pump. To send one command:
   1. Enter the SCL-40 User ID and password and click LOGIN.
-  2. Click START or STOP.
-  3. START shows a final safety confirmation; STOP is immediate.
+  2. Click START ALL or STOP ALL.
+  3. START ALL shows a final safety confirmation; STOP ALL is immediate.
 
 The password is sent only to the SCL-40 and is kept only in memory during the
-login request; it is not written to the GUI log. START uses the flow rate
-already set on the SCL-40. Set-flow and pressure-limit writes are not enabled yet.
+login request; it is not written to the GUI log. START ALL uses the flow rates
+already set on the SCL-40. Automatic LCP JET RUN is disabled while two pumps are
+connected until safe per-pump roles and start behavior are confirmed.

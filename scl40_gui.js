@@ -54,6 +54,10 @@ const state = {
   pollTimer: null,
   trendSince: 0,
   limits: {},
+  pumps: [],
+  selectedUnit: localStorage.getItem("scl40SelectedPump") || "A",
+  lastData: null,
+  trendUnit: "",
   run: { stage: "idle", active: false },
   seenRunEvents: new Set(),
 };
@@ -290,7 +294,12 @@ function renderChart() {
 /* Trend history lives on the server, so it survives reloads and every client
    sees the same trace. Each poll pulls only the samples it has not seen. */
 async function fetchTrend() {
-  const data = await api(`/api/trend?since=${state.trendSince}`);
+  if (state.trendUnit !== state.selectedUnit) {
+    state.history = [];
+    state.trendSince = 0;
+    state.trendUnit = state.selectedUnit;
+  }
+  const data = await api(`/api/trend?unit=${encodeURIComponent(state.selectedUnit)}&since=${state.trendSince}`);
   for (const [t, p, f, target] of data.samples || []) {
     state.history.push({ t: t * 1000, p, f, target });
   }
@@ -393,7 +402,7 @@ async function applyParams() {
     const result = await api("/api/control/method", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ params, confirmation: "SET_METHOD" }),
+      body: JSON.stringify({ unit_id: state.selectedUnit, params, confirmation: "SET_METHOD" }),
     });
     const changed = Object.values(result.applied).filter((item) => item.changed);
     for (const item of changed) {
@@ -451,8 +460,10 @@ function renderRun(run, monitorPressure) {
   setText("runElapsed", active ? `${Math.round(run.elapsed_seconds)} s` : null);
 
   const ready = state.controlEnabled && state.loggedIn;
-  $("runStartBtn").disabled = !ready || active;
+  const multiPump = state.pumps.length > 1;
+  $("runStartBtn").disabled = !ready || active || multiPump;
   $("runAbortBtn").disabled = !ready || !active;
+  $("multiPumpWarning").hidden = !multiPump;
   for (const id of Object.values(RUN_FIELDS)) $(id).disabled = active;
 
   // Run events come from the server; fold them into the single event log.
@@ -508,7 +519,80 @@ async function abortRun() {
 
 /* ---------- rendering ---------- */
 
+function selectPump(unitId) {
+  if (!unitId || unitId === state.selectedUnit) return;
+  state.selectedUnit = unitId;
+  localStorage.setItem("scl40SelectedPump", unitId);
+  state.history = [];
+  state.trendSince = 0;
+  state.trendUnit = "";
+  for (const input of paramInputs()) input.dataset.dirty = "0";
+  if (state.lastData) render(state.lastData);
+  fetchTrend().then(renderChart).catch((error) => logLine("error", error.message));
+}
+
+function renderPumpDeck(pumps) {
+  const deck = $("pumpDeck");
+  deck.replaceChildren();
+  for (const pump of pumps) {
+    const monitor = pump.monitor || {};
+    const method = pump.method || {};
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "pump-card";
+    card.classList.toggle("selected", pump.unit_id === state.selectedUnit);
+    card.dataset.state = monitor.pump_on === true ? "running" : monitor.pump_on === false ? "stopped" : "unknown";
+
+    const name = document.createElement("span");
+    name.className = "pump-name";
+    name.textContent = pump.model || "Unknown pump";
+    const unit = document.createElement("span");
+    unit.className = "pump-unit";
+    unit.textContent = `UNIT ${pump.unit_id}`;
+    const live = document.createElement("span");
+    live.className = "pump-live";
+    live.textContent = monitor.pump_on === true ? "RUNNING" : monitor.pump_on === false ? "STOPPED" : "UNKNOWN";
+    unit.append(" · ", live);
+    card.append(name, unit);
+
+    const metrics = document.createElement("dl");
+    for (const [label, value] of [
+      ["PRESSURE", `${num(monitor.pressure, 2) ?? "—"} MPa`],
+      ["FLOW", `${num(monitor.flow, 4) ?? "—"} mL/min`],
+      ["TARGET", `${num(monitor.target_flow ?? method.flow, 4) ?? "—"} mL/min`],
+    ]) {
+      const box = document.createElement("div");
+      const dt = document.createElement("dt");
+      const dd = document.createElement("dd");
+      dt.textContent = label;
+      dd.textContent = value;
+      box.append(dt, dd);
+      metrics.append(box);
+    }
+    card.append(metrics);
+    card.addEventListener("click", () => selectPump(pump.unit_id));
+    deck.append(card);
+  }
+}
+
+function syncPumpSelector(pumps) {
+  const select = $("flowPumpSelect");
+  const signature = pumps.map((pump) => `${pump.unit_id}:${pump.model}`).join("|");
+  if (select.dataset.signature !== signature) {
+    select.replaceChildren();
+    for (const pump of pumps) {
+      const option = document.createElement("option");
+      option.value = pump.unit_id;
+      option.textContent = `Unit ${pump.unit_id} · ${pump.model}`;
+      select.append(option);
+    }
+    select.dataset.signature = signature;
+  }
+  select.value = state.selectedUnit;
+}
+
 function render(data) {
+  state.lastData = data;
   state.host = data.host;
   state.controlEnabled = !!data.control_enabled;
   state.simulated = !!data.simulated;
@@ -516,10 +600,14 @@ function render(data) {
   state.pollMs = data.run?.active || state.simulated ? 2000 : 5000;
 
   const controller = data.config?.controller || {};
-  const pump = data.config?.pumps?.[0] || {};
+  state.pumps = data.pumps || [];
+  if (!state.pumps.some((pump) => pump.unit_id === state.selectedUnit)) {
+    state.selectedUnit = state.pumps[0]?.unit_id || "A";
+  }
+  const pump = state.pumps.find((item) => item.unit_id === state.selectedUnit) || {};
   const summary = data.summary || {};
-  const method = data.method || {};
-  const monitor = data.monitor || {};
+  const method = pump.method || data.method || {};
+  const monitor = pump.monitor || data.monitor || {};
   const auth = data.auth || {};
   const activity = data.control_activity || {};
   state.loggedIn = !!auth.logged_in;
@@ -530,8 +618,14 @@ function render(data) {
   setText("sessionUser", state.loggedIn ? auth.user_id : "NONE", "NONE");
 
   setText("controllerModel", controller.model, "SCL-40");
-  setText("pumpModel", pump.model, "NO PUMP");
-  setText("pumpUnit", pump.unit_id ? `Unit ${pump.unit_id}` : "", "");
+  setText("pumpSummary", state.pumps.map((item) => `${item.model} · Unit ${item.unit_id}`).join("  |  "), "NO PUMP");
+  renderPumpDeck(state.pumps);
+  syncPumpSelector(state.pumps);
+  setText("trendPumpChip", `PUMP ${state.selectedUnit}`);
+  setText("pressureLabel", `PUMP ${state.selectedUnit} PRESSURE`);
+  setText("flowLabel", `PUMP ${state.selectedUnit} FLOW`);
+  setText("targetLabel", `PUMP ${state.selectedUnit} TARGET FLOW`);
+  setText("pumpStateLabel", `PUMP ${state.selectedUnit}`);
 
   const monitorLive = monitor.available !== false;
   const pressure = num(monitor.pressure, 2);
@@ -542,7 +636,7 @@ function render(data) {
   setText("flow", flow, DASH_NUM);
   setText("targetFlow", target, DASH_NUM);
   setText("pressureNote", method.pmax ? `limit ${num(method.pmax, 1)} MPa` : "limit —");
-  setText("flowNote", monitorLive ? "measured" : "no monitor session");
+  setText("flowNote", monitorLive ? "monitor value" : "no monitor session");
   setText("targetNote", `method ${method.number ?? "—"}`);
 
   document.querySelector('.readout[data-channel="pressure"]').classList.toggle("stale", pressure === null);
@@ -555,7 +649,7 @@ function render(data) {
   setText("pumpStateText", pumpRunning === true ? "RUNNING" : pumpRunning === false ? "STOPPED" : "UNKNOWN");
   setText("pumpStateNote", `OpState ${monitor.op_state_code || "—"}`);
 
-  setText("methodAlias", method.alias ? `${method.alias} · No ${method.number ?? "—"}` : `No ${method.number ?? "—"}`);
+  setText("methodAlias", `PUMP ${state.selectedUnit} · ${method.alias ? `${method.alias} · ` : ""}No ${method.number ?? "—"}`);
   setText("methodFlow", num(method.flow, 4));
   setText("methodTflow", num(method.tflow, 4));
   setText("methodPmax", num(method.pmax, 1));
@@ -571,7 +665,7 @@ function render(data) {
   updateParamButtons();
 
   setText("controllerDetail", `${controller.model || "—"} · fw ${controller.version || "—"} · addr ${controller.address || "—"}`);
-  setText("pumpDetail", pump.model ? `${pump.model} · Unit ${pump.unit_id || "—"} · fw ${pump.version || "—"} · addr ${pump.address || "—"}` : "not detected");
+  setText("pumpDetail", state.pumps.map((item) => `${item.model} · Unit ${item.unit_id} · fw ${item.version || "—"} · addr ${item.address || "—"}`).join(" | "), "not detected");
   setText("hostName", summary.host_name);
   setText("systemState", summary.system_state_code);
   setText("loginState", state.loggedIn ? `web session · ${auth.user_id}` : `device code ${summary.login_state_code || "—"}`);
@@ -579,7 +673,7 @@ function render(data) {
 
   const commandReady = state.controlEnabled && state.loggedIn && !activity.busy;
   const runActive = !!data.run?.active;
-  $("startBtn").disabled = !commandReady || runActive;
+  $("startBtn").disabled = !commandReady || runActive || state.pumps.length === 0;
   $("stopBtn").disabled = !commandReady;
   $("setFlowBtn").disabled = !commandReady || runActive;
   $("loginBtn").disabled = state.loggedIn;
@@ -611,7 +705,10 @@ function render(data) {
   checkSuddenRise();
   renderChart();
 
-  if ($("flowInput").value === "" && method.flow) $("flowInput").value = num(method.flow, 4);
+  const flowMax = Number(state.limits.flow?.max ?? 5);
+  $("flowInput").max = String(flowMax);
+  setText("flowRangeLabel", `0.0000 – ${flowMax.toFixed(4)}`);
+  if (document.activeElement !== $("flowInput")) $("flowInput").value = num(method.flow, 4) || "";
 }
 
 function renderOffline(message) {
@@ -681,8 +778,9 @@ async function logout() {
 
 async function setFlow() {
   const value = Number($("flowInput").value);
-  if (!Number.isFinite(value) || value < 0 || value > 1) {
-    logLine("error", "유량은 0.0000~1.0000 mL/min 범위로 입력하세요.");
+  const flowMax = Number(state.limits.flow?.max ?? 5);
+  if (!Number.isFinite(value) || value < 0 || value > flowMax) {
+    logLine("error", `유량은 0.0000~${flowMax.toFixed(4)} mL/min 범위로 입력하세요.`);
     return;
   }
   const formatted = value.toFixed(4);
@@ -691,10 +789,10 @@ async function setFlow() {
     const result = await api("/api/control/method", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ params: { flow: formatted }, confirmation: "SET_METHOD" }),
+      body: JSON.stringify({ unit_id: state.selectedUnit, params: { flow: formatted }, confirmation: "SET_METHOD" }),
     });
     const applied = result.applied.flow;
-    logLine("ok", `유량 변경 확인 (readback): ${applied.previous} → ${applied.value} mL/min`);
+    logLine("ok", `Pump ${result.unit_id} 유량 변경 확인 (readback): ${applied.previous} → ${applied.value} mL/min`);
   } catch (error) {
     logLine("error", error.message);
   }
@@ -702,14 +800,15 @@ async function setFlow() {
 }
 
 async function command(action) {
-  if (action === "start" && !confirm("현재 메소드의 목표 유량으로 펌프를 START 합니다. 계속할까요?")) return;
+  const targets = state.pumps.map((pump) => `Unit ${pump.unit_id} ${pump.model}: ${pump.method?.flow ?? "—"} mL/min`).join("\n");
+  if (action === "start" && !confirm(`SYSTEM START는 연결된 모든 펌프를 함께 켭니다.\n\n${targets}\n\n계속할까요?`)) return;
   try {
     const data = await api(`/api/control/${action}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirmation: action.toUpperCase() }),
     });
-    logLine("warn", `${data.action} 명령 전송 · 장비 응답 ${data.response_root}`);
+    logLine("warn", `SYSTEM ${data.action} 명령 전송 · 장비 응답 ${data.response_root}`);
   } catch (error) {
     logLine("error", error.message);
   }
@@ -722,6 +821,7 @@ $("refreshBtn").addEventListener("click", () => refresh(true));
 $("loginBtn").addEventListener("click", login);
 $("logoutBtn").addEventListener("click", logout);
 $("setFlowBtn").addEventListener("click", setFlow);
+$("flowPumpSelect").addEventListener("change", (event) => selectPump(event.target.value));
 $("startBtn").addEventListener("click", () => command("start"));
 $("stopBtn").addEventListener("click", () => command("stop"));
 $("userId").addEventListener("keydown", (event) => { if (event.key === "Enter") $("password").focus(); });

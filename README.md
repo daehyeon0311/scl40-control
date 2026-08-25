@@ -1,7 +1,7 @@
-# Shimadzu SCL-40 / LC-40i Python Control GUI
+# Shimadzu SCL-40 Multi-Pump Python Control GUI
 
-Local/LAN Python dashboard for a Shimadzu SCL-40 connected to an LC-40i pump
-through the optical REMOTE link. The PC communicates with the SCL-40 over
+Local/LAN Python dashboard for a Shimadzu SCL-40 connected to LC-40i and
+LC-20Ai pumps through the optical REMOTE link. The PC communicates with the SCL-40 over
 HTTP/XML on Ethernet without LabSolutions or Clarity.
 
 The pump is not used for chromatography here. It pushes water behind the
@@ -12,7 +12,8 @@ when the pressure jumps, and stop the pump when it jumps again.
 ## Current hardware
 
 - Controller: SCL-40, firmware 1.67
-- Pump reported by firmware: LC-40i, Unit A, firmware 1.00, optical address 3
+- Pump A: LC-40i, Unit A, firmware 1.00, optical address 3
+- Pump B: LC-20Ai, Unit B, firmware 1.01, optical address 4
 - SCL-40 IP: `192.168.200.99`
 - Controller PC Ethernet: `192.168.200.101/24`
 - Controller PC Wi-Fi at development time: `172.30.148.225`
@@ -20,11 +21,13 @@ when the pressure jumps, and stop the pump when it jumps again.
 ## Features
 
 - Detect SCL-40 and connected pumps
-- Read Method 0 target flow, Tflow and pressure limits
+- Detect and display every pump reported by SCL-40 Config
+- Read Method 0 target flow, Tflow and pressure limits independently by UnitID
 - SCL web login and Monitor session
-- Read pressure, flow and Pump A logical operation state
-- Pump START/STOP
-- Set Pump A flow in the hard-limited range `0.0000` to `1.0000 mL/min`
+- Read pressure, flow and logical operation state independently for Pump A/B
+- Select Pump A or Pump B for details, trend and flow-setting target
+- System-wide Pump START/STOP (`Event.cgi` contains no confirmed UnitID)
+- Set the selected pump flow in the range `0.0000` to `5.0000 mL/min`
 - Verify a flow write by immediately reading Method 0 back
 - Rolling pressure/flow trend chart with 5, 15 and 60 minute windows. The trace
   is held in the browser only, so a page reload restarts it.
@@ -57,7 +60,12 @@ server, so closing the browser does not stop it.
 
 Both thresholds are absolute pressures typed in by the operator.
 
-The fill stage watches immediately and switches to the experiment flow on the
+The automatic LCP run is deliberately disabled when more than one pump is
+connected. The confirmed START/STOP request operates at system level, so pump
+roles must be defined and a per-pump start mechanism must be confirmed before
+multi-pump automation is enabled.
+
+For a single-pump configuration, the fill stage watches immediately and switches to the experiment flow on the
 first pressure sample at or above `실험 유량 전환 압력`. After that switch the
 experiment stage starts watching only once the settle time has passed **and**
 the pressure has been seen below its end threshold. That prevents the falling
@@ -150,7 +158,8 @@ Pump ON/OFF:
 <Event><Method><PumpBT>0</PumpBT></Method></Event>
 ```
 
-Set Pump A flow while preserving current Tflow:
+Set a selected pump flow while preserving that pump's current Tflow (Unit A
+shown; Unit B uses `B` and the precision returned by its Method response):
 
 ```xml
 <Method><No>0</No><Pumps><Pump><UnitID>A</UnitID><Usual><Flow>0.1000</Flow><Tflow>1.0000</Tflow></Usual></Pump></Pumps></Method>
@@ -179,6 +188,11 @@ Logout:
 
 - Do not infer compatibility from old SCL-10AVP/LC-20 serial protocols.
 - Do not add undocumented write fields or automatically test writes.
+- Config, Method and Monitor have confirmed independent Unit A/B entries.
+- The confirmed Event START/STOP XML has no UnitID. The GUI therefore labels
+  these actions `START ALL` / `STOP ALL` and treats them as system-wide.
+- Unit B Method writes have passed simulator tests only. They have not yet been
+  sent to the physical SCL-40.
 - The physical pump response still requires verification. The SCL monitor has
   reported Pump A `OpState=1`, flow `0.0460`, pressure `0.0 MPa`, and system
   state `401`, but the user reported no visible physical pump motion.

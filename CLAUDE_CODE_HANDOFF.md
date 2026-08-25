@@ -2,7 +2,7 @@
 
 ## Objective
 
-Continue development and verification of the Python SCL-40/LC-40i controller
+Continue development and verification of the Python SCL-40 multi-pump controller
 without LabSolutions. Preserve the existing read-only discovery and never
 guess undocumented command values.
 
@@ -30,14 +30,23 @@ guess undocumented command values.
   screen; web login is refused.
 - Before the latest restart, START returned HTTP 200 and Monitor reported
   `OpState=1`, but the user reported no visible physical pump motion.
-- Method 0 readback was Flow `0.0460`, Tflow `1.0000`, Pmax `10.0`.
+- An earlier single-pump Method 0 readback was Flow `0.0460`, Tflow `1.0000`,
+  Pmax `10.0`. After adding Unit B, the latest live read was Unit A Flow
+  `5.0000` and Unit B Flow `5.000`, both with Pmax `10.0`.
+- Config now reports LC-40i Unit A (address 3) and LC-20Ai Unit B (address 4).
+- Live Method/Monitor reads confirm separate UnitID A/B values. The Event
+  START/STOP request has no confirmed UnitID and must be treated as global.
 
 ## Recent implementation
 
 - SET FLOW has no browser confirmation popup per user request.
 - START retains a confirmation; STOP is immediate.
-- Flow is limited server-side to `0.0000..1.0000 mL/min`, serialized to four
-  decimal places, and verified by a Method 0 readback.
+- Flow is limited server-side to `0.0000..5.0000 mL/min`, serialized with the
+  precision observed for the selected UnitID, and verified by Method readback.
+- The dashboard has independent Pump A/B cards, per-unit trend history and a
+  selected-unit flow target. START/STOP are labeled START ALL/STOP ALL.
+- LCP JET RUN is locked when multiple pumps are connected because its Event
+  request cannot yet target one pump safely.
 - Multiple clients are supported through one backend session.
 - START, STOP and SET FLOW share a non-blocking command lock. A colliding
   command returns HTTP 409.
@@ -47,7 +56,13 @@ guess undocumented command values.
 
 ## Highest priority next steps
 
-0. First real-instrument session, in order:
+0. Multi-pump write verification, only after showing the exact XML and getting
+   operator approval:
+   a. Change only Unit B flow by a small safe amount and verify Method/Monitor
+      plus the LC-20Ai front panel.
+   b. Confirm experimentally whether system Event START/STOP really operates
+      both pumps. Do not assume a per-pump Event field.
+1. First automated-run instrument session, in order:
    a. Log in, read Method 0, note the working pressure at the fill flow and at
       the experiment flow. Those numbers set the two run thresholds.
    b. Write `Pmax` alone through METHOD PARAMETERS and confirm the readback.
@@ -55,9 +70,8 @@ guess undocumented command values.
    c. Run `감시만` mode once on a pump the operator started manually, so the
       controller only has to issue STOP.
    d. Only then run the full LCP JET mode.
-1. Have the user log in and perform a small, physically safe SET FLOW test.
 2. Capture the exact Method response and post-write Method readback.
-3. Compare the LC-40i front-panel value and REMOTE indicator with Monitor XML.
+3. Compare both pump front-panel values and REMOTE indicators with Monitor XML.
 4. Determine whether SCL web control requires an additional documented control
    ownership transition distinct from login. Do not invent one.
 5. Add structured, redacted protocol logs that include response XML but never
@@ -83,6 +97,8 @@ end-of-sample pressure rise.
   earlier, software-side trigger, not a replacement.
 - Never automatically send START, STOP, SET FLOW or pressure-limit writes
   outside that armed run.
+- Keep multi-pump LCP automation locked until pump roles and safe targeting are
+  explicitly defined.
 - Show any new exact write request to the user before first implementation/test.
 - Do not use LC-20/SCL-10AVP serial commands on LC-40i.
 - Do not claim physical success from HTTP 200 alone.

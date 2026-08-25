@@ -66,6 +66,10 @@ class SimulatedSCL40:
         self.tflow = Decimal("1.0000")
         self.pmax = Decimal("10.0")
         self.pmin = Decimal("0.0")
+        self.pump_b_target_flow = Decimal("0.200")
+        self.pump_b_tflow = Decimal("0.000")
+        self.pump_b_pmax = Decimal("10.0")
+        self.pump_b_pmin = Decimal("0.0")
         self.actual_flow = 0.0
         self.pressure = 0.0
         self.overpressure_stops = 0
@@ -139,7 +143,10 @@ class SimulatedSCL40:
               "<Version>1.67</Version><Address>1</Address></Ctrl>"
             + "<Pumps><Pump><UnitID>A</UnitID><Model>LC-40i</Model>"
               "<SubModel></SubModel><Version>1.00</Version><Address>3</Address>"
-              "<State>0</State></Pump></Pumps>"
+              "<State>1</State></Pump>"
+              "<Pump><UnitID>B</UnitID><Model>LC-20Ai</Model>"
+              "<SubModel></SubModel><Version>1.01</Version><Address>4</Address>"
+              "<State>1</State></Pump></Pumps>"
             + "</Info></Config>"
         )
 
@@ -160,6 +167,9 @@ class SimulatedSCL40:
     def method_response(self) -> str:
         with self.lock:
             flow, tflow, pmax, pmin = self.target_flow, self.tflow, self.pmax, self.pmin
+            bflow, btflow, bpmax, bpmin = (
+                self.pump_b_target_flow, self.pump_b_tflow, self.pump_b_pmax, self.pump_b_pmin,
+            )
         return (
             XML_HEADER
             + "<Method><No>0</No><Alias>SIM METHOD</Alias><Pumps><Pump>"
@@ -167,20 +177,30 @@ class SimulatedSCL40:
             + f"<Usual><Flow>{flow:.4f}</Flow><Tflow>{tflow:.4f}</Tflow>"
               f"<Pmax>{pmax:.1f}</Pmax></Usual>"
             + f"<Detail><Pmin>{pmin:.1f}</Pmin></Detail>"
+            + "</Pump><Pump><UnitID>B</UnitID>"
+            + f"<Usual><Flow>{bflow:.3f}</Flow><Tflow>{btflow:.3f}</Tflow>"
+              f"<Pmax>{bpmax:.1f}</Pmax></Usual>"
+            + f"<Detail><Pmin>{bpmin:.1f}</Pmin></Detail>"
             + "</Pump></Pumps></Method>"
         )
 
     def method_write(self, request: ET.Element) -> str:
-        pump = next(
-            (p for p in request.findall("./Pumps/Pump") if text_of(p, "UnitID") == "A"),
-            None,
-        )
-        if pump is not None:
+        for pump in request.findall("./Pumps/Pump"):
+            unit_id = text_of(pump, "UnitID")
+            if unit_id == "A":
+                attributes = {
+                    "./Usual/Flow": "target_flow", "./Usual/Tflow": "tflow",
+                    "./Usual/Pmax": "pmax", "./Detail/Pmin": "pmin",
+                }
+            elif unit_id == "B":
+                attributes = {
+                    "./Usual/Flow": "pump_b_target_flow", "./Usual/Tflow": "pump_b_tflow",
+                    "./Usual/Pmax": "pump_b_pmax", "./Detail/Pmin": "pump_b_pmin",
+                }
+            else:
+                continue
             fields = (
-                ("./Usual/Flow", "target_flow"),
-                ("./Usual/Tflow", "tflow"),
-                ("./Usual/Pmax", "pmax"),
-                ("./Detail/Pmin", "pmin"),
+                (path, attribute) for path, attribute in attributes.items()
             )
             with self.lock:
                 for path, attribute in fields:
@@ -225,15 +245,18 @@ class SimulatedSCL40:
         with self.lock:
             if not self.session_id or session_id != self.session_id:
                 return None
-            flow, pressure = self.actual_flow, self.pressure
+            flow, pressure, bflow = self.actual_flow, self.pressure, float(self.pump_b_target_flow)
             op_state = "1" if self.pump_on else "0"
         return (
             XML_HEADER
             + "<Monitor>"
             + "<SysMon><Method><Pumps><Pump><UnitID>A</UnitID>"
             + f"<Press>{pressure:.1f}</Press><PressUnit>0</PressUnit>"
-            + f"<Flow>{flow:.4f}</Flow></Pump></Pumps></Method></SysMon>"
+            + f"<Flow>{flow:.4f}</Flow></Pump>"
+            + f"<Pump><UnitID>B</UnitID><Press>{pressure:.1f}</Press><PressUnit>2</PressUnit>"
+            + f"<Flow>{bflow:.3f}</Flow></Pump></Pumps></Method></SysMon>"
             + "<Config><Situation><Pumps><Pump><UnitID>A</UnitID>"
+            + f"<OpState>{op_state}</OpState></Pump><Pump><UnitID>B</UnitID>"
             + f"<OpState>{op_state}</OpState></Pump></Pumps></Situation></Config>"
             + "<AnalyMon><Authority>1</Authority><SysState>401</SysState></AnalyMon>"
             + "</Monitor>"
