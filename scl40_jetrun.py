@@ -143,6 +143,13 @@ class JetRunController:
                 raise RunError("이미 진행 중인 런이 있습니다. 먼저 중단하세요.")
         if not self._client.session_id:
             raise RunError("런을 시작하려면 SCL-40 로그인이 필요합니다.")
+        connected_pumps = self._client.get_config().get("pumps", [])
+        if len(connected_pumps) > 1:
+            units = ", ".join(f"{pump['unit_id']}({pump['model']})" for pump in connected_pumps)
+            raise RunError(
+                "다중 펌프에서는 SYSTEM START가 모든 펌프를 함께 켭니다. "
+                f"현재 연결: {units}. 두 펌프의 자동운전 역할이 정의될 때까지 LCP JET RUN은 잠겨 있습니다."
+            )
 
         config: dict[str, Any] = {
             "mode": mode,

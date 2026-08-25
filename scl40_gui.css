@@ -329,6 +329,50 @@ output, input, button, table { font: inherit; }
   color: var(--ink-2);
 }
 
+.sim-strip[hidden] { display: none; }
+
+/* ---------- multi-pump deck ---------- */
+
+.pump-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+  padding: 10px;
+}
+
+.pump-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px 16px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--ink-3);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.pump-card:hover { border-color: #9eabb9; }
+.pump-card.selected { border-color: var(--accent); border-left-color: var(--accent); background: #f8fbfe; }
+.pump-card[data-state="running"] { border-left-color: var(--run); }
+.pump-card .pump-name { font-weight: 700; font-size: 14px; }
+.pump-card .pump-unit { font: 700 10px var(--mono); color: var(--ink-3); letter-spacing: .1em; }
+.pump-card .pump-live { font: 700 10px var(--mono); color: var(--ink-2); }
+.pump-card[data-state="running"] .pump-live { color: var(--run); }
+.pump-card dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.pump-card dl div { padding-top: 8px; border-top: 1px solid var(--rule-soft); }
+.pump-card dt { font-size: 9px; color: var(--ink-3); letter-spacing: .1em; }
+.pump-card dd { margin: 3px 0 0; font: 600 14px var(--mono); }
+
+.multi-pump-warning {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #ddc793;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 11px;
+}
+
 .p-note {
   display: block;
   margin-top: 9px;
@@ -885,7 +929,8 @@ table.data td.u {
   color: var(--ink-3);
 }
 
-.input input {
+.input input,
+.input select {
   width: 150px;
   padding: 7px 9px;
   border: 1px solid var(--rule);
@@ -897,8 +942,11 @@ table.data td.u {
   outline: 0;
 }
 
-.input input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.input input:disabled { background: #f3f4f6; color: var(--ink-3); }
+.input input:focus,
+.input select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.input input:disabled,
+.input select:disabled { background: #f3f4f6; color: var(--ink-3); }
+.input.select select { min-width: 128px; }
 
 .input.num { position: relative; }
 .input.num input { width: 132px; padding-right: 56px; text-align: right; }

@@ -37,14 +37,14 @@ STATUS_REQUEST = (
 PUMP_START_REQUEST = XML_HEADER + '<Event><Method><PumpBT>1</PumpBT></Method></Event>'
 PUMP_STOP_REQUEST = XML_HEADER + '<Event><Method><PumpBT>0</PumpBT></Method></Event>'
 
-# Writable Method 0 fields for Pump A. Element names and their position in the
+# Writable Method 0 fields for a selected pump. Element names and their position in the
 # document come from the live Method.cgi read response, not from guesswork.
 # `order` is the sequence the instrument itself uses inside each section.
 PARAM_SPEC: dict[str, dict[str, Any]] = {
     "flow": {
         "section": "Usual", "tag": "Flow", "order": 0, "decimals": 4,
         "label": "유량", "unit": "mL/min",
-        "min": Decimal("0"), "max": Decimal("1.0"),
+        "min": Decimal("0"), "max": Decimal("5.0"),
     },
     "tflow": {
         "section": "Usual", "tag": "Tflow", "order": 1, "decimals": 4,
@@ -170,12 +170,10 @@ class SCL40Client:
             "analyst": text_at(system, "./Status/Analyst"),
         }
 
-    def get_method(self) -> dict[str, Any]:
-        root, _ = self._post_xml("/cgi-bin/Method.cgi", XML_HEADER + "<Method><No>0</No></Method>")
-        if root.tag != "Method":
-            raise SCL40Error(f"Method 응답 루트가 예상과 다름: {root.tag}")
-        pump = next((p for p in root.findall("./Pumps/Pump") if text_at(p, "UnitID") == "A"), None)
+    @staticmethod
+    def _method_values(root: ET.Element, pump: ET.Element) -> dict[str, Any]:
         return {
+            "unit_id": text_at(pump, "UnitID"),
             "number": text_at(root, "No"),
             "alias": text_at(root, "Alias"),
             "flow": text_at(pump, "./Usual/Flow"),
@@ -183,6 +181,29 @@ class SCL40Client:
             "pmax": text_at(pump, "./Usual/Pmax"),
             "pmin": text_at(pump, "./Detail/Pmin"),
         }
+
+    def get_methods(self) -> dict[str, Any]:
+        root, _ = self._post_xml("/cgi-bin/Method.cgi", XML_HEADER + "<Method><No>0</No></Method>")
+        if root.tag != "Method":
+            raise SCL40Error(f"Method 응답 루트가 예상과 다름: {root.tag}")
+        connected = {pump["unit_id"] for pump in self.get_config().get("pumps", [])}
+        return {
+            "number": text_at(root, "No"),
+            "alias": text_at(root, "Alias"),
+            "pumps": [
+                self._method_values(root, pump)
+                for pump in root.findall("./Pumps/Pump")
+                if text_at(pump, "UnitID") in connected
+            ],
+        }
+
+    def get_method(self, unit_id: str = "A") -> dict[str, Any]:
+        unit_id = unit_id.strip().upper()
+        methods = self.get_methods()
+        method = next((pump for pump in methods["pumps"] if pump["unit_id"] == unit_id), None)
+        if method is None:
+            raise SCL40Error(f"연결된 Pump Unit {unit_id}를 Method에서 찾지 못했습니다.")
+        return method
 
     def login(self, user_id: str, password: str) -> dict[str, Any]:
         if not user_id:
@@ -228,44 +249,84 @@ class SCL40Client:
             self.user_id = ""
         return {"logged_in": False}
 
-    def get_monitor(self) -> dict[str, Any]:
+    def get_monitors(self) -> dict[str, Any]:
         if not self.session_id:
-            return {"available": False, "reason": "SCL-40 로그인이 필요합니다."}
+            return {"available": False, "reason": "SCL-40 로그인이 필요합니다.", "pumps": []}
         root, _ = self._post_xml(f"/cgi-bin/Monitor.cgi/{self.session_id}", XML_HEADER + "<Monitor/>")
         if root.tag != "Monitor":
             raise SCL40Error(f"Monitor 응답 루트가 예상과 다름: {root.tag}")
         sys_pumps = root.findall("./SysMon/Method/Pumps/Pump")
-        pump = next((p for p in sys_pumps if text_at(p, "UnitID") == "A"), sys_pumps[0] if sys_pumps else None)
         sit_pumps = root.findall("./Config/Situation/Pumps/Pump")
-        situation = next((p for p in sit_pumps if text_at(p, "UnitID") == "A"), sit_pumps[0] if sit_pumps else None)
-        op_state = text_at(situation, "OpState")
+        situations = {text_at(pump, "UnitID"): pump for pump in sit_pumps}
+        connected = {pump["unit_id"] for pump in self.get_config().get("pumps", [])}
+        pumps = []
+        for pump in sys_pumps:
+            unit_id = text_at(pump, "UnitID")
+            if unit_id not in connected:
+                continue
+            op_state = text_at(situations.get(unit_id), "OpState")
+            pumps.append({
+                "unit_id": unit_id,
+                "available": True,
+                "reason": "",
+                "pressure": text_at(pump, "Press") or None,
+                "pressure_unit_code": text_at(pump, "PressUnit"),
+                "flow": text_at(pump, "Flow") or None,
+                "pump_on": op_state == "1" if op_state else None,
+                "op_state_code": op_state,
+                "error": None,
+            })
         return {
             "available": True,
             "reason": "",
-            "pressure": text_at(pump, "Press") or None,
-            "pressure_unit_code": text_at(pump, "PressUnit"),
-            "flow": text_at(pump, "Flow") or None,
-            "pump_on": op_state == "1" if op_state else None,
-            "op_state_code": op_state,
             "authority": text_at(root, "./AnalyMon/Authority") or text_at(root, ".//Authority"),
             "system_state_code": text_at(root, "./AnalyMon/SysState") or text_at(root, ".//SysState"),
             "error": None,
+            "pumps": pumps,
+        }
+
+    def get_monitor(self, unit_id: str = "A") -> dict[str, Any]:
+        monitors = self.get_monitors()
+        if not monitors.get("available"):
+            return monitors
+        unit_id = unit_id.strip().upper()
+        monitor = next((pump for pump in monitors["pumps"] if pump["unit_id"] == unit_id), None)
+        if monitor is None:
+            raise SCL40Error(f"연결된 Pump Unit {unit_id}를 Monitor에서 찾지 못했습니다.")
+        return {
+            **monitor,
+            "authority": monitors.get("authority"),
+            "system_state_code": monitors.get("system_state_code"),
         }
 
     def snapshot(self) -> dict[str, Any]:
         started = time.perf_counter()
         config = self.get_config()
         summary = self.get_summary()
-        method = self.get_method()
+        methods = self.get_methods()
         try:
-            monitor = self.get_monitor()
+            monitors = self.get_monitors()
         except SCL40Error as exc:
-            monitor = {"available": False, "reason": str(exc)}
-        monitor.setdefault("pressure", None)
-        monitor.setdefault("flow", None)
-        monitor["target_flow"] = method.get("flow")
-        monitor.setdefault("pump_on", None)
-        monitor.setdefault("error", None)
+            monitors = {"available": False, "reason": str(exc), "pumps": []}
+        method_map = {pump["unit_id"]: pump for pump in methods.get("pumps", [])}
+        monitor_map = {pump["unit_id"]: pump for pump in monitors.get("pumps", [])}
+        pumps = []
+        for pump_config in config.get("pumps", []):
+            unit_id = pump_config["unit_id"]
+            method = method_map.get(unit_id, {"unit_id": unit_id, "number": methods.get("number"), "alias": methods.get("alias")})
+            monitor = monitor_map.get(unit_id, {
+                "unit_id": unit_id, "available": False,
+                "reason": monitors.get("reason", "Monitor 응답에 펌프가 없습니다."),
+                "pressure": None, "flow": None, "pump_on": None, "op_state_code": "", "error": None,
+            })
+            monitor = {
+                **monitor,
+                "target_flow": method.get("flow"),
+                "authority": monitors.get("authority"),
+                "system_state_code": monitors.get("system_state_code"),
+            }
+            pumps.append({**pump_config, "method": method, "monitor": monitor})
+        primary = pumps[0] if pumps else {"method": {}, "monitor": {"available": False, "reason": "연결된 펌프가 없습니다."}}
         return {
             "ok": True,
             "host": self.host,
@@ -273,9 +334,11 @@ class SCL40Client:
             "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
             "config": config,
             "summary": summary,
-            "method": method,
+            "methods": methods,
+            "pumps": pumps,
+            "method": primary["method"],
             "auth": {"logged_in": bool(self.session_id), "user_id": self.user_id},
-            "monitor": monitor,
+            "monitor": primary["monitor"],
         }
 
     def send_pump(self, start: bool) -> dict[str, Any]:
@@ -291,12 +354,13 @@ class SCL40Client:
             raise SCL40Error(f"Event 응답값 불일치: {echoed}")
         return {"response_root": root.tag, "response": raw[:2000]}
 
-    def _format(self, key: str, value: Any) -> str:
+    def _format(self, key: str, value: Any, decimals: int | None = None) -> str:
         spec = self.limits[key]
-        quantum = Decimal(1).scaleb(-spec["decimals"])
-        return f"{Decimal(str(value)).quantize(quantum):.{spec['decimals']}f}"
+        decimals = spec["decimals"] if decimals is None else decimals
+        quantum = Decimal(1).scaleb(-decimals)
+        return f"{Decimal(str(value)).quantize(quantum):.{decimals}f}"
 
-    def _validate(self, key: str, raw: Any) -> str:
+    def _validate(self, key: str, raw: Any, decimals: int | None = None) -> str:
         spec = self.limits.get(key)
         if spec is None:
             raise SCL40Error(f"알 수 없는 파라미터: {key}")
@@ -308,9 +372,9 @@ class SCL40Client:
             raise SCL40Error(
                 f"{spec['label']} 허용 범위는 {spec['min']}~{spec['max']} {spec['unit']}입니다."
             )
-        return self._format(key, value)
+        return self._format(key, value, decimals)
 
-    def set_method_params(self, updates: dict[str, Any]) -> dict[str, Any]:
+    def set_method_params(self, updates: dict[str, Any], unit_id: str = "A") -> dict[str, Any]:
         """Write Method 0 pump parameters and verify every field by readback.
 
         Only element names and positions observed in the instrument's own
@@ -322,14 +386,19 @@ class SCL40Client:
         if not updates:
             raise SCL40Error("변경할 파라미터가 없습니다.")
 
-        values = {key: self._validate(key, raw) for key, raw in updates.items()}
-        current = self.get_method()
+        unit_id = unit_id.strip().upper()
+        current = self.get_method(unit_id)
+        decimals = {}
+        for key in ("flow", "tflow"):
+            current_value = str(current.get(key) or "")
+            decimals[key] = len(current_value.rsplit(".", 1)[1]) if "." in current_value else self.limits[key]["decimals"]
+        values = {key: self._validate(key, raw, decimals.get(key)) for key, raw in updates.items()}
 
         # Flow and Tflow always travel together in the confirmed request shape,
         # so unchanged ones are resent with the value the instrument reports.
         for key in ALWAYS_SENT:
             if key not in values:
-                values[key] = self._format(key, current.get(key) or 0)
+                values[key] = self._format(key, current.get(key) or 0, decimals.get(key))
 
         pmax = Decimal(values.get("pmax") or current.get("pmax") or "0")
         pmin = Decimal(values.get("pmin") or current.get("pmin") or "0")
@@ -340,7 +409,7 @@ class SCL40Client:
         ET.SubElement(root, "No").text = current.get("number") or "0"
         pumps = ET.SubElement(root, "Pumps")
         pump = ET.SubElement(pumps, "Pump")
-        ET.SubElement(pump, "UnitID").text = "A"
+        ET.SubElement(pump, "UnitID").text = unit_id
         for section in ("Usual", "Detail"):
             keys = [k for k in values if self.limits[k]["section"] == section]
             if not keys:
@@ -354,7 +423,7 @@ class SCL40Client:
         if response.tag != "Method":
             raise SCL40Error(f"Method 응답 루트가 예상과 다름: {response.tag}")
 
-        readback = self.get_method()
+        readback = self.get_method(unit_id)
         mismatched = []
         for key, sent in values.items():
             try:
@@ -375,7 +444,7 @@ class SCL40Client:
             }
             for key in values
         }
-        return {"applied": applied, "request": body, "method": readback}
+        return {"unit_id": unit_id, "applied": applied, "request": body, "method": readback}
 
 
 class TrendRecorder:
@@ -387,7 +456,8 @@ class TrendRecorder:
     """
 
     def __init__(self, capacity: int = 7200, min_interval: float = 0.5) -> None:
-        self._samples: deque[tuple[float, float | None, float | None, float | None]] = deque(maxlen=capacity)
+        self._samples: dict[str, deque[tuple[float, float | None, float | None, float | None]]] = {}
+        self._capacity = capacity
         self._lock = threading.Lock()
         self._min_interval = min_interval
 
@@ -398,20 +468,22 @@ class TrendRecorder:
         except (TypeError, ValueError):
             return None
 
-    def record(self, pressure: Any, flow: Any, target: Any) -> None:
+    def record(self, pressure: Any, flow: Any, target: Any, unit_id: str = "A") -> None:
         now = time.time()
         sample = (round(now, 2), self._number(pressure), self._number(flow), self._number(target))
         if sample[1] is None and sample[2] is None:
             return
         with self._lock:
-            if self._samples and now - self._samples[-1][0] < self._min_interval:
+            samples = self._samples.setdefault(unit_id, deque(maxlen=self._capacity))
+            if samples and now - samples[-1][0] < self._min_interval:
                 return
-            self._samples.append(sample)
+            samples.append(sample)
 
-    def series(self, since: float = 0.0) -> tuple[list[list[Any]], float]:
+    def series(self, since: float = 0.0, unit_id: str = "A") -> tuple[list[list[Any]], float]:
         with self._lock:
-            samples = [list(item) for item in self._samples if item[0] > since]
-            until = self._samples[-1][0] if self._samples else since
+            stored = self._samples.get(unit_id, ())
+            samples = [list(item) for item in stored if item[0] > since]
+            until = stored[-1][0] if stored else since
         return samples, until
 
 
@@ -535,14 +607,19 @@ def make_handler(
                     since = float(query.get("since", ["0"])[0])
                 except (TypeError, ValueError):
                     since = 0.0
-                samples, until = recorder.series(since)
-                self._json(200, {"ok": True, "samples": samples, "until": until})
+                unit_id = str(query.get("unit", ["A"])[0]).strip().upper()
+                samples, until = recorder.series(since, unit_id)
+                self._json(200, {"ok": True, "unit_id": unit_id, "samples": samples, "until": until})
             elif self.path == "/api/snapshot":
                 try:
                     snapshot = client.snapshot()
-                    monitor = snapshot.get("monitor") or {}
-                    if monitor.get("available"):
-                        recorder.record(monitor.get("pressure"), monitor.get("flow"), monitor.get("target_flow"))
+                    for pump in snapshot.get("pumps", []):
+                        monitor = pump.get("monitor") or {}
+                        if monitor.get("available"):
+                            recorder.record(
+                                monitor.get("pressure"), monitor.get("flow"), monitor.get("target_flow"),
+                                pump.get("unit_id") or "A",
+                            )
                     self._json(200, {
                         **snapshot,
                         "control_enabled": control_enabled,
@@ -601,18 +678,19 @@ def make_handler(
                     if not self._control_allowed(body, "SET_METHOD"):
                         return
                     params = body.get("params") or {}
+                    unit_id = str(body.get("unit_id") or "A").strip().upper()
                     if not isinstance(params, dict):
                         self._json(400, {"ok": False, "error": "params는 객체여야 합니다."})
                         return
                     result = broker.execute(
-                        "SET METHOD", self.client_address[0],
-                        lambda: client.set_method_params(params),
+                        f"SET METHOD {unit_id}", self.client_address[0],
+                        lambda: client.set_method_params(params, unit_id),
                     )
                     changes = ", ".join(
                         f"{item['label']} {item['previous']} -> {item['value']} {item['unit']}"
                         for item in result["applied"].values() if item["changed"]
                     )
-                    log.warning("method write from %s: %s", self.client_address[0], changes or "no change")
+                    log.warning("method write for Unit %s from %s: %s", unit_id, self.client_address[0], changes or "no change")
                     log.info("method write request: %s", result["request"])
                     self._json(200, {"ok": True, **result})
                     return
