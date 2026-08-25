@@ -865,11 +865,30 @@ function showSystemCommandState(action, phase = null) {
   for (const name of ["start", "stop"]) {
     const button = $(`${name}Btn`);
     const pending = name === action && phase === "pending";
+    const pressed = name === action && phase && phase !== "error";
     button.classList.toggle("command-pending", pending);
-    button.classList.toggle("command-pressed", pending);
+    button.classList.toggle("command-pressed", pressed);
     button.setAttribute("aria-busy", pending ? "true" : "false");
     button.textContent = `${name.toUpperCase()} ALL`;
   }
+}
+
+function pumpCommandConfirmed(data, action) {
+  const states = (data.pumps || []).map((pump) => pump.monitor?.pump_on);
+  const expected = action === "start";
+  return states.length > 0 && states.every((running) => running === expected);
+}
+
+async function waitForPumpCommand(action, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const data = await api("/api/snapshot");
+    state.pumps = data.pumps || [];
+    render(data, { chart: false });
+    if (pumpCommandConfirmed(data, action)) return true;
+  }
+  return false;
 }
 
 async function command(action) {
@@ -879,6 +898,7 @@ async function command(action) {
   showSystemCommandState(action, "pending");
   $("startBtn").disabled = true;
   $("stopBtn").disabled = true;
+  clearTimeout(state.pollTimer);
   try {
     const data = await api(`/api/control/${action}`, {
       method: "POST",
@@ -886,14 +906,18 @@ async function command(action) {
       body: JSON.stringify({ confirmation: action.toUpperCase() }),
     });
     logLine("warn", `SYSTEM ${data.action} 명령 전송 · 장비 응답 ${data.response_root}`);
-    showSystemCommandState(action, "success");
+    const confirmed = await waitForPumpCommand(action);
+    if (confirmed) {
+      logLine("ok", `SYSTEM ${data.action} 상태 전환 확인`);
+    } else {
+      logLine("warn", `SYSTEM ${data.action} 명령은 전송됐지만 5초 안에 모니터 상태가 바뀌지 않았습니다.`);
+    }
   } catch (error) {
     logLine("error", error.message);
     showSystemCommandState(action, "error");
   }
-  await refresh(false);
   showSystemCommandState(action, null);
-  if (state.lastData) render(state.lastData, { chart: false });
+  await refresh(false);
 }
 
 /* ---------- wiring ---------- */
