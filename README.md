@@ -22,10 +22,10 @@ when the pressure jumps, and stop the pump when it jumps again.
 
 - Detect SCL-40 and connected pumps
 - Detect and display every pump reported by SCL-40 Config
-- Read Method 0 target flow, Tflow and pressure limits independently by UnitID
+- Read Method 0 flow, Tflow and pressure limits independently by UnitID
 - SCL web login and Monitor session
 - Read pressure, flow and logical operation state independently for Pump A/B
-- Select Pump A or Pump B for details, trend and flow-setting target
+- Select Pump A or Pump B for details, trend and flow setting
 - System-wide Pump START/STOP (`Event.cgi` contains no confirmed UnitID)
 - Set the selected pump flow in the range `0.0000` to `5.0000 mL/min`
 - Verify a flow write by immediately reading Method 0 back
@@ -91,7 +91,7 @@ for it. `--pressure-ceiling` caps what the dashboard may write to `Pmax`
 `scl40_sim.py` emulates the SCL-40 HTTP/XML endpoints so the dashboard can be
 developed and demonstrated when the instrument is unreachable. It replays only
 response shapes already confirmed against the real device and adds a simple
-pump model: flow ramps toward the method target when the pump is on, and
+pump model: flow ramps toward the method flow when the pump is on, and
 pressure follows flow at roughly 10 MPa per mL/min.
 
 ```powershell

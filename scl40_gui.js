@@ -577,7 +577,6 @@ function renderPumpDeck(pumps) {
   deck.replaceChildren();
   for (const pump of pumps) {
     const monitor = pump.monitor || {};
-    const method = pump.method || {};
     const card = document.createElement("button");
     card.type = "button";
     card.className = "pump-card";
@@ -603,7 +602,6 @@ function renderPumpDeck(pumps) {
     for (const [label, value] of [
       ["PRESSURE", `${num(monitor.pressure, 2) ?? "—"} MPa`],
       ["FLOW", `${num(monitor.flow, 4) ?? "—"} mL/min`],
-      ["TARGET", `${num(monitor.target_flow ?? method.flow, 4) ?? "—"} mL/min`],
     ]) {
       const box = document.createElement("div");
       const dt = document.createElement("dt");
@@ -671,24 +669,19 @@ function render(data, { chart = true } = {}) {
   setText("legendPumpB", pumpB ? `PUMP B · ${pumpB.model}` : "PUMP B");
   setText("pressureLabel", `PUMP ${state.selectedUnit} PRESSURE`);
   setText("flowLabel", `PUMP ${state.selectedUnit} FLOW`);
-  setText("targetLabel", `PUMP ${state.selectedUnit} TARGET FLOW`);
   setText("pumpStateLabel", `PUMP ${state.selectedUnit}`);
 
   const monitorLive = monitor.available !== false;
   const pressure = num(monitor.pressure, 2);
   const flow = num(monitor.flow, 4);
-  const target = num(monitor.target_flow ?? method.flow, 4);
 
   setText("pressure", pressure, "–.––");
   setText("flow", flow, DASH_NUM);
-  setText("targetFlow", target, DASH_NUM);
   setText("pressureNote", method.pmax ? `limit ${num(method.pmax, 1)} MPa` : "limit —");
   setText("flowNote", monitorLive ? "monitor value" : "no monitor session");
-  setText("targetNote", `method ${method.number ?? "—"}`);
 
   document.querySelector('.readout[data-channel="pressure"]').classList.toggle("stale", pressure === null);
   document.querySelector('.readout[data-channel="flow"]').classList.toggle("stale", flow === null);
-  document.querySelector('.readout[data-channel="target"]').classList.toggle("stale", target === null);
 
   const pumpRunning = monitor.pump_on;
   const pumpNode = $("pumpState");

@@ -220,7 +220,6 @@ output, input, button, table { font: inherit; }
 
 .readout[data-channel="pressure"] { border-left-color: var(--accent); }
 .readout[data-channel="flow"]     { border-left-color: #b4690e; }
-.readout[data-channel="target"]   { border-left-color: var(--ink-3); }
 
 .r-label {
   display: block;
@@ -381,7 +380,7 @@ output, input, button, table { font: inherit; }
   background: var(--run);
   animation: pump-led 0.8s steps(2, end) infinite;
 }
-.pump-card dl { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 7px 0 0; width: 100%; }
+.pump-card dl { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 7px 0 0; width: 100%; }
 .pump-card dl div { padding-top: 8px; border-top: 1px solid var(--rule-soft); }
 .pump-card dt { font-size: 9px; color: var(--ink-3); letter-spacing: .1em; }
 .pump-card dd { margin: 3px 0 0; font: 600 14px var(--mono); }
