@@ -599,7 +599,6 @@ table.data.param th { width: auto; }
   color: var(--ink-2);
 }
 
-.trend-note { margin-left: 0; }
 
 .lg::before {
   content: "";
