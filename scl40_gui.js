@@ -13,6 +13,7 @@ const RUN_DEFAULTS = {
   pressure_limit: "9.0",
   settle_seconds: "15",
   stage_timeout: "1800",
+  duration_seconds: "60",
 };
 
 const RUN_FIELDS = {
@@ -24,6 +25,7 @@ const RUN_FIELDS = {
   pressure_limit: "runLimit",
   settle_seconds: "runSettle",
   stage_timeout: "runTimeout",
+  duration_seconds: "runDuration",
 };
 
 const RUN_EVENT_LEVEL = {
@@ -33,6 +35,8 @@ const RUN_EVENT_LEVEL = {
   watching: "info",
   fill_started: "warn",
   watch_started: "warn",
+  timed_started: "warn",
+  duration_complete: "ok",
   aborted: "warn",
   pump_off: "warn",
   limit: "error",
@@ -460,17 +464,26 @@ function runFieldValues() {
   return values;
 }
 
-function applyRunDefaults(config) {
+function applyRunDefaults(config, force = false) {
   for (const [key, id] of Object.entries(RUN_FIELDS)) {
     const node = $(id);
     const supplied = config && config[key] !== undefined && config[key] !== null ? String(config[key]) : "";
-    if (node.value === "") node.value = supplied || RUN_DEFAULTS[key];
+    if (force && supplied) node.value = supplied;
+    else if (node.value === "") node.value = supplied || RUN_DEFAULTS[key];
   }
 }
 
 function updateRunMode() {
-  const lcp = $("runMode").value === "lcp_jet";
-  for (const node of document.querySelectorAll('[data-mode="lcp_jet"]')) node.hidden = !lcp;
+  const mode = $("runMode").value;
+  for (const node of document.querySelectorAll("[data-modes]")) {
+    node.hidden = !node.dataset.modes.split(/\s+/).includes(mode);
+  }
+  $("runFlowLabel").textContent = mode === "timed" ? "운전 유량" : "실험 유량";
+  $("runThresholdLabel").textContent = mode === "timed" ? "남은 시간" : "판단 압력";
+  $("runHint").textContent = mode === "timed"
+    ? "설정한 유량으로 운전하고 시간이 끝나면 자동 정지합니다. 압력 상한과 ABORT는 항상 작동하며, 타이머는 브라우저를 닫아도 유지됩니다."
+    : "물 채우기는 즉시 감시하고, 실험 단계만 압력이 판단값 아래로 내려온 뒤 감시합니다. 감시는 서버에서 돌기 때문에 브라우저를 닫아도 유지됩니다.";
+  if (!state.run.active) setText("runThreshold", null);
 }
 
 function renderRun(run, monitorPressure) {
@@ -488,7 +501,11 @@ function renderRun(run, monitorPressure) {
   setText("statusRun", `RUN ${stage}`);
 
   const mpa = (value) => (value === null || value === undefined ? null : `${value.toFixed(2)} MPa`);
-  setText("runThreshold", mpa(run.threshold));
+  const timed = run.mode === "timed";
+  $("runThresholdLabel").textContent = timed ? "남은 시간" : "판단 압력";
+  const duration = Number(run.config?.duration_seconds);
+  const remaining = timed && Number.isFinite(duration) ? Math.max(0, duration - Number(run.elapsed_seconds || 0)) : null;
+  setText("runThreshold", timed ? (remaining === null ? null : `${Math.ceil(remaining)} s`) : mpa(run.threshold));
   setText("runPressureNow", mpa(run.pressure ?? monitorPressure));
   setText("runPeak", mpa(run.peak));
   setText("runElapsed", active ? `${Math.round(run.elapsed_seconds)} s` : null);
@@ -508,14 +525,17 @@ function renderRun(run, monitorPressure) {
     logLine(RUN_EVENT_LEVEL[event.kind] || "info", event.message, event.timestamp);
   }
 
-  applyRunDefaults(run.config);
+  applyRunDefaults(run.config, active);
   updateRunMode();
 }
 
 async function startRun() {
   const values = runFieldValues();
   const lcp = values.mode === "lcp_jet";
-  const summary = lcp
+  const timed = values.mode === "timed";
+  const summary = timed
+    ? `${values.run_flow} mL/min으로 펌프를 켜고 ${values.duration_seconds}초 동안 운전한 뒤 자동으로 정지합니다.`
+    : lcp
     ? `${values.fill_flow} mL/min으로 펌프를 켜고 물을 채웁니다.\n`
       + `압력이 ${values.fill_pressure} MPa 이상이 되면 ${values.run_flow} mL/min으로 바꾸고,\n`
       + `다시 ${values.run_pressure} MPa 이상이 되면 펌프를 정지합니다.`
@@ -529,7 +549,7 @@ async function startRun() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...values, confirmation: "START_RUN" }),
     });
-    logLine("warn", `LCP JET RUN 시작 · ${result.run.stage_label}`);
+    logLine("warn", `자동운전 시작 · ${result.run.stage_label}`);
   } catch (error) {
     logLine("error", error.message);
   }

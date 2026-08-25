@@ -81,6 +81,7 @@ server, so closing the browser does not stop it.
 |---|---|---|
 | 물 채우는 중 | writes the fill flow, starts the pump | pressure ≥ 실험 유량 전환 압력 |
 | 실험 중 | writes the experiment flow, pump keeps running | pressure ≥ 실험 끝 판단 압력 → STOP |
+| 시간 운전 | writes the selected flow and starts the pump | configured duration expires → STOP |
 
 Both thresholds are absolute pressures typed in by the operator.
 
