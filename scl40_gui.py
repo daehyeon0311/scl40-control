@@ -48,8 +48,8 @@ PARAM_SPEC: dict[str, dict[str, Any]] = {
     },
     "tflow": {
         "section": "Usual", "tag": "Tflow", "order": 1, "decimals": 4,
-        "label": "총 유량 시간", "unit": "min",
-        "min": Decimal("0"), "max": Decimal("999.9999"),
+        "label": "총 유량", "unit": "mL/min",
+        "min": Decimal("0"), "max": Decimal("5.0"),
     },
     "pmax": {
         "section": "Usual", "tag": "Pmax", "order": 2, "decimals": 1,
@@ -66,6 +66,7 @@ PARAM_SPEC: dict[str, dict[str, Any]] = {
 # Flow and Tflow always travel together: that pairing is the write request shape
 # already confirmed against the instrument.
 ALWAYS_SENT = ("flow", "tflow")
+USER_WRITABLE_PARAMS = frozenset(("flow", "pmax", "pmin"))
 
 
 class SCL40Error(RuntimeError):
@@ -101,6 +102,7 @@ class SCL40Client:
                 "min": str(spec["min"]), "max": str(spec["max"]),
             }
             for key, spec in self.limits.items()
+            if key in USER_WRITABLE_PARAMS
         }
 
     def _post_xml(self, endpoint: str, body: str) -> tuple[ET.Element, str]:
@@ -364,6 +366,8 @@ class SCL40Client:
         spec = self.limits.get(key)
         if spec is None:
             raise SCL40Error(f"알 수 없는 파라미터: {key}")
+        if key not in USER_WRITABLE_PARAMS:
+            raise SCL40Error(f"{spec['label']} 파라미터는 대시보드에서 변경할 수 없습니다.")
         try:
             value = Decimal(str(raw))
         except (InvalidOperation, ValueError) as exc:

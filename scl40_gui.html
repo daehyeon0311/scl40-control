@@ -46,15 +46,6 @@
           <span class="p-note" id="pumpStateNote">OpState —</span>
         </div>
 
-        <div class="rail-info">
-          <span class="p-label">ACQUISITION</span>
-          <dl>
-            <div><dt>Host</dt><dd id="railHost">—</dd></div>
-            <div><dt>Interval</dt><dd id="railPoll">—</dd></div>
-            <div><dt>Window</dt><dd id="railWindow">5 min</dd></div>
-            <div><dt>Samples</dt><dd id="railSamples">0</dd></div>
-          </dl>
-        </div>
       </aside>
 
       <main class="main">
@@ -140,7 +131,7 @@
           </section>
         </div>
 
-        <div class="panel-row">
+        <div class="panel-row info-row">
           <section class="panel">
             <div class="panel-head">
               <h2>METHOD PARAMETERS</h2>
@@ -155,11 +146,6 @@
                 <tr>
                   <th>Flow</th><td id="methodFlow">—</td>
                   <td class="ro">커맨드바에서 변경</td><td class="u">mL/min</td>
-                </tr>
-                <tr>
-                  <th>Total flow time</th><td id="methodTflow">—</td>
-                  <td><input class="param-input" id="inTflow" data-param="tflow" type="number" step="0.01" min="0"></td>
-                  <td class="u">min</td>
                 </tr>
                 <tr>
                   <th>Pressure max</th><td id="methodPmax">—</td>
@@ -193,6 +179,21 @@
                 <tr><th>System state</th><td id="systemState" colspan="2">—</td></tr>
                 <tr><th>Login state</th><td id="loginState" colspan="2">—</td></tr>
                 <tr><th>Last operator</th><td id="lastOperator" colspan="2">—</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>ACQUISITION</h2>
+              <span class="head-note">LIVE HISTORY</span>
+            </div>
+            <table class="data">
+              <tbody>
+                <tr><th>Host</th><td id="acqHost">—</td></tr>
+                <tr><th>Interval</th><td id="acqPoll">—</td></tr>
+                <tr><th>Window</th><td id="acqWindow">5 min</td></tr>
+                <tr><th>Samples</th><td id="acqSamples">0</td></tr>
               </tbody>
             </table>
           </section>

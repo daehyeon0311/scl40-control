@@ -633,7 +633,6 @@ function render(data, { chart = true } = {}) {
 
   setText("methodAlias", `PUMP ${state.selectedUnit} · ${method.alias ? `${method.alias} · ` : ""}No ${method.number ?? "—"}`);
   setText("methodFlow", num(method.flow, 4));
-  setText("methodTflow", num(method.tflow, 4));
   setText("methodPmax", num(method.pmax, 1));
   setText("methodPmin", num(method.pmin, 1));
 
@@ -697,9 +696,9 @@ function render(data, { chart = true } = {}) {
     : "no command issued");
   setText("lastUpdated", `updated ${clock(new Date(data.timestamp))}`);
 
-  setText("railHost", data.host);
-  setText("railPoll", `${(state.pollMs / 1000).toFixed(0)} s`);
-  setText("railSamples", state.pumps.map((item) => `${item.unit_id}:${(state.historyByUnit[item.unit_id] || []).length}`).join(" · "), "0");
+  setText("acqHost", data.host);
+  setText("acqPoll", `${(state.pollMs / 1000).toFixed(0)} s`);
+  setText("acqSamples", state.pumps.map((item) => `${item.unit_id}:${(state.historyByUnit[item.unit_id] || []).length}`).join(" · "), "0");
   if (chart) scheduleChartRender();
 
   const flowMax = Number(state.limits.flow?.max ?? 5);
@@ -897,7 +896,7 @@ $("rangeGroup").addEventListener("click", (event) => {
   if (!button) return;
   state.rangeMin = Number(button.dataset.min);
   for (const node of $("rangeGroup").children) node.classList.toggle("on", node === button);
-  setText("railWindow", `${state.rangeMin} min`);
+  setText("acqWindow", `${state.rangeMin} min`);
   scheduleChartRender();
 });
 
