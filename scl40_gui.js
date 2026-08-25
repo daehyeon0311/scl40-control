@@ -68,6 +68,8 @@ const state = {
   chartMeta: null,
 };
 
+let actionDialogResolve = null;
+
 /* ---------- helpers ---------- */
 
 const TIME_FORMAT = { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" };
@@ -113,6 +115,27 @@ function shortTime(value) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : clock(date);
+}
+
+function closeActionDialog(confirmed) {
+  const dialog = $("actionDialog");
+  dialog.hidden = true;
+  if (actionDialogResolve) {
+    const resolve = actionDialogResolve;
+    actionDialogResolve = null;
+    resolve(confirmed);
+  }
+}
+
+function confirmAction({ title, message, confirmText = "확인", tone = "primary" }) {
+  if (actionDialogResolve) closeActionDialog(false);
+  $("actionDialogTitle").textContent = title;
+  $("actionDialogMessage").textContent = message;
+  $("actionDialogConfirm").textContent = confirmText;
+  $("actionDialog").dataset.tone = tone;
+  $("actionDialog").hidden = false;
+  requestAnimationFrame(() => $("actionDialogConfirm").focus());
+  return new Promise((resolve) => { actionDialogResolve = resolve; });
 }
 
 /* ---------- transport ---------- */
@@ -540,7 +563,12 @@ async function startRun() {
       + `압력이 ${values.fill_pressure} MPa 이상이 되면 ${values.run_flow} mL/min으로 바꾸고,\n`
       + `다시 ${values.run_pressure} MPa 이상이 되면 펌프를 정지합니다.`
     : `현재 운전 상태를 감시하다가 압력이 ${values.run_pressure} MPa 이상이 되면 펌프를 정지합니다.`;
-  if (!confirm(`${summary}\n\n계속할까요?`)) return;
+  if (!await confirmAction({
+    title: "자동 운전을 시작할까요?",
+    message: summary,
+    confirmText: "START RUN",
+    tone: "start",
+  })) return;
 
   $("runStartBtn").disabled = true;
   try {
@@ -557,7 +585,12 @@ async function startRun() {
 }
 
 async function abortRun() {
-  if (!confirm("진행 중인 런을 중단하고 펌프를 정지합니다. 계속할까요?")) return;
+  if (!await confirmAction({
+    title: "자동 운전을 중단할까요?",
+    message: "진행 중인 런을 중단하고 연결된 펌프를 정지합니다.",
+    confirmText: "ABORT RUN",
+    tone: "danger",
+  })) return;
   try {
     const result = await api("/api/run/abort", {
       method: "POST",
@@ -1007,7 +1040,12 @@ async function waitForPumpCommand(action, timeoutMs = 5000) {
 async function command(action) {
   if (state.systemCommand.phase === "pending") return;
   const targets = state.pumps.map((pump) => `Unit ${pump.unit_id} ${pump.model}: ${pump.method?.flow ?? "—"} mL/min`).join("\n");
-  if (action === "start" && !confirm(`SYSTEM START는 연결된 모든 펌프를 함께 켭니다.\n\n${targets}\n\n계속할까요?`)) return;
+  if (action === "start" && !await confirmAction({
+    title: "전체 펌프를 시작할까요?",
+    message: `SYSTEM START는 연결된 모든 펌프를 함께 켭니다.\n\n${targets}`,
+    confirmText: "START ALL",
+    tone: "start",
+  })) return;
   showSystemCommandState(action, "pending");
   $("startBtn").disabled = true;
   $("stopBtn").disabled = true;
@@ -1062,6 +1100,14 @@ $("revertBtn").addEventListener("click", revertParams);
 $("runStartBtn").addEventListener("click", startRun);
 $("runAbortBtn").addEventListener("click", abortRun);
 $("runMode").addEventListener("change", updateRunMode);
+$("actionDialogCancel").addEventListener("click", () => closeActionDialog(false));
+$("actionDialogConfirm").addEventListener("click", () => closeActionDialog(true));
+$("actionDialog").addEventListener("click", (event) => {
+  if (event.target === $("actionDialog")) closeActionDialog(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("actionDialog").hidden) closeActionDialog(false);
+});
 
 for (const input of paramInputs()) {
   input.addEventListener("input", () => {
