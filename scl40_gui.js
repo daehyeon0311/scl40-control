@@ -61,6 +61,8 @@ const state = {
   run: { stage: "idle", active: false },
   seenRunEvents: new Set(),
   authorization: { role: "viewer", control: false, pressure_limits: false, acknowledge_alarms: false },
+  workspaceTab: localStorage.getItem("scl40WorkspaceTab") || "operation",
+  chartMeta: null,
 };
 
 /* ---------- helpers ---------- */
@@ -236,7 +238,7 @@ function renderChart() {
     x: (box.left + box.right) / 2 - markWidth / 2,
     y: (box.top + box.bottom) / 2 - markHeight / 2,
     width: markWidth, height: markHeight,
-    opacity: 0.09, preserveAspectRatio: "xMidYMid meet",
+    opacity: 0.035, preserveAspectRatio: "xMidYMid meet",
   }));
 
   for (let i = 0; i <= 4; i += 1) {
@@ -276,7 +278,7 @@ function renderChart() {
   for (const item of series) {
     for (const d of buildSegments(item.points, (point) => point.p, xOf, yOfPressure, maxGap)) {
       const attrs = {
-        d, fill: "none", stroke: item.color, "stroke-width": 1.8,
+        d, fill: "none", stroke: item.color, "stroke-width": 2.4,
         "stroke-linejoin": "round", "stroke-linecap": "round",
       };
       if (item.dashed) attrs["stroke-dasharray"] = "7 4";
@@ -288,9 +290,14 @@ function renderChart() {
       const cx = xOf(last.t);
       const cy = yOfPressure(last.p);
       svg.append(svgEl("circle", { cx, cy, r: 3, fill: item.color, stroke: "#fff", "stroke-width": 1 }));
-      const labelOffset = item.index % 2 === 0 ? 8 : 21;
+      const chipX = box.right - 84;
+      const chipY = box.top + 8 + item.index * 24;
+      svg.append(svgEl("rect", {
+        x: chipX, y: chipY, width: 76, height: 18, rx: 2,
+        fill: "#ffffff", stroke: item.color, "stroke-width": 1,
+      }));
       svg.append(svgEl("text", {
-        x: Math.min(cx + 6, box.right - 42), y: Math.max(box.top + 11, cy - labelOffset),
+        x: chipX + 38, y: chipY + 12.5, "text-anchor": "middle",
         "font-family": "Consolas, monospace", "font-size": 10, "font-weight": 700, fill: item.color,
       }, `${item.unitId}  ${last.p.toFixed(2)}`));
     }
@@ -300,6 +307,10 @@ function renderChart() {
   const run = state.run || {};
   if (run.active && run.threshold !== null && run.threshold !== undefined && run.threshold <= maxPressure) {
     const y = yOfPressure(run.threshold);
+    svg.append(svgEl("rect", {
+      x: box.left, y: box.top, width: box.right - box.left, height: Math.max(0, y - box.top),
+      fill: "#a92b26", opacity: 0.045,
+    }));
     svg.append(svgEl("line", {
       x1: box.left, y1: y, x2: box.right, y2: y,
       stroke: "#a92b26", "stroke-width": 1, "stroke-dasharray": "6 4",
@@ -310,6 +321,47 @@ function renderChart() {
     }, `판단 압력 ${run.threshold.toFixed(2)} MPa`));
   }
 
+  state.chartMeta = { box, from, spanMs, series };
+
+}
+
+function showChartTooltip(event) {
+  const meta = state.chartMeta;
+  const svg = $("chart");
+  const tooltip = $("chartTooltip");
+  if (!meta || !svg || !tooltip) return;
+  const rect = svg.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * meta.box.width;
+  if (x < meta.box.left || x > meta.box.right) {
+    tooltip.hidden = true;
+    return;
+  }
+  const time = meta.from + ((x - meta.box.left) / (meta.box.right - meta.box.left)) * meta.spanMs;
+  const rows = meta.series.map((item) => {
+    const nearest = item.points.reduce((best, point) => !best || Math.abs(point.t - time) < Math.abs(best.t - time) ? point : best, null);
+    return { unitId: item.unitId, color: item.color, point: nearest };
+  }).filter((item) => item.point && Math.abs(item.point.t - time) <= Math.max(state.pollMs * 3, 10000));
+  if (!rows.length) {
+    tooltip.hidden = true;
+    return;
+  }
+  tooltip.replaceChildren();
+  const title = document.createElement("b");
+  title.textContent = new Date(rows[0].point.t).toLocaleTimeString("ko-KR", TIME_FORMAT);
+  tooltip.append(title);
+  for (const item of rows) {
+    const row = document.createElement("span");
+    const label = document.createElement("em");
+    label.style.color = item.color;
+    label.textContent = `PUMP ${item.unitId}`;
+    const value = document.createElement("strong");
+    value.textContent = item.point.p === null ? "—" : `${item.point.p.toFixed(2)} MPa`;
+    row.append(label, value);
+    tooltip.append(row);
+  }
+  tooltip.hidden = false;
+  tooltip.style.left = `${Math.min(event.offsetX + 16, rect.width - 170)}px`;
+  tooltip.style.top = `${Math.max(8, event.offsetY - 20)}px`;
 }
 
 function scheduleChartRender() {
@@ -426,6 +478,7 @@ function renderRun(run, monitorPressure) {
   state.run = run;
   const stage = run.stage || "idle";
   const active = !!run.active;
+  $("runPanel").dataset.active = active ? "true" : "false";
 
   $("runHeaderStatus").dataset.stage = stage;
   $("runHeaderStatus").title = run.detail || "런이 실행 중이 아닙니다.";
@@ -576,6 +629,23 @@ async function acknowledgeAlarm(alarmId) {
   }
 }
 
+function switchWorkspaceTab(tabName) {
+  const allowed = new Set(["operation", "method", "records", "system"]);
+  const selected = allowed.has(tabName) ? tabName : "operation";
+  state.workspaceTab = selected;
+  localStorage.setItem("scl40WorkspaceTab", selected);
+  for (const button of document.querySelectorAll("[data-workspace-tab]")) {
+    const active = button.dataset.workspaceTab === selected;
+    button.classList.toggle("on", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  }
+  for (const section of document.querySelectorAll("[data-tab-section]")) {
+    section.hidden = section.dataset.tabSection !== selected;
+  }
+  $("managementRow").hidden = !["records", "system"].includes(selected);
+  if (selected === "operation") scheduleChartRender();
+}
+
 /* ---------- rendering ---------- */
 
 function selectPump(unitId) {
@@ -636,7 +706,7 @@ function renderPumpDeck(pumps) {
     card.type = "button";
     card.className = "pump-card";
     card.classList.toggle("selected", pump.unit_id === state.selectedUnit);
-    card.dataset.state = monitor.pump_on === true ? "running" : monitor.pump_on === false ? "stopped" : "unknown";
+    card.dataset.state = monitor.error ? "error" : monitor.pump_on === true ? "running" : monitor.pump_on === false ? "stopped" : "unknown";
 
     const illustration = pumpIllustration(pump.model, pump.unit_id);
     const identity = document.createElement("span");
@@ -650,7 +720,7 @@ function renderPumpDeck(pumps) {
     identity.append(name, unit);
     const live = document.createElement("span");
     live.className = "pump-live";
-    live.textContent = monitor.pump_on === true ? "RUNNING" : monitor.pump_on === false ? "STOPPED" : "UNKNOWN";
+    live.textContent = monitor.error ? "ERROR" : monitor.pump_on === true ? "RUNNING" : monitor.pump_on === false ? "STOPPED" : "UNKNOWN";
     card.append(illustration, identity, live);
 
     const metrics = document.createElement("dl");
@@ -709,10 +779,17 @@ function render(data, { chart = true } = {}) {
   const activity = data.control_activity || {};
   state.loggedIn = !!auth.logged_in;
   state.authorization = data.authorization || state.authorization;
+  $("commandbar").dataset.auth = state.loggedIn ? "logged-in" : "logged-out";
+  document.querySelector(".access-group").dataset.auth = state.loggedIn ? "logged-in" : "logged-out";
+  $("accessSession").hidden = !state.loggedIn;
+  $("accessSession").querySelector("b").textContent = state.loggedIn
+    ? `${auth.user_id} · ${state.authorization.role.toUpperCase()}`
+    : "NONE";
 
   $("linkState").dataset.state = "online";
   $("linkState").querySelector("b").textContent = "ONLINE";
   setText("latency", `${data.latency_ms} ms`);
+  setText("chartLive", `LIVE · ${(state.pollMs / 1000).toFixed(0)} s`);
   setText("sessionUser", state.loggedIn ? `${auth.user_id} · ${state.authorization.role.toUpperCase()}` : "NONE", "NONE");
 
   setText("controllerModel", controller.model, "SCL-40");
@@ -966,6 +1043,15 @@ $("password").addEventListener("keydown", (event) => { if (event.key === "Enter"
 $("flowInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !$("setFlowBtn").disabled) setFlow();
 });
+for (const button of document.querySelectorAll("[data-workspace-tab]")) {
+  button.addEventListener("click", () => switchWorkspaceTab(button.dataset.workspaceTab));
+}
+$("multiPumpWarning").addEventListener("click", () => {
+  const expanded = $("multiPumpWarning").getAttribute("aria-expanded") === "true";
+  $("multiPumpWarning").setAttribute("aria-expanded", expanded ? "false" : "true");
+});
+$("chart").addEventListener("pointermove", showChartTooltip);
+$("chart").addEventListener("pointerleave", () => { $("chartTooltip").hidden = true; });
 for (const button of document.querySelectorAll("button[data-export]")) {
   button.addEventListener("click", () => downloadCsv(button.dataset.export));
 }
@@ -1006,6 +1092,7 @@ setInterval(() => { $("clock").textContent = clock(new Date()); }, 1000);
 $("clock").textContent = clock(new Date());
 applyRunDefaults(null);
 updateRunMode();
+switchWorkspaceTab(state.workspaceTab);
 logLine("info", "콘솔 시작 · SCL-40 상태 조회");
 scheduleChartRender();
 refresh(true);

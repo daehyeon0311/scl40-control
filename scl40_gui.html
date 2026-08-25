@@ -34,7 +34,14 @@
     <div class="workspace">
       <main class="main">
 
-        <div class="overview-row">
+        <nav class="workspace-tabs" aria-label="Dashboard sections">
+          <button type="button" data-workspace-tab="operation" class="on">OPERATION</button>
+          <button type="button" data-workspace-tab="method">METHOD</button>
+          <button type="button" data-workspace-tab="records">RECORDS</button>
+          <button type="button" data-workspace-tab="system">SYSTEM</button>
+        </nav>
+
+        <div class="overview-row" data-tab-section="operation">
           <section class="panel pump-deck-panel">
             <div class="panel-head">
               <h2>PUMP DECK</h2>
@@ -51,6 +58,7 @@
                 <button type="button" data-min="15">15 min</button>
                 <button type="button" data-min="60">60 min</button>
               </div>
+              <span class="chart-live" id="chartLive">LIVE · 5 s</span>
               <div class="legend">
                 <span class="lg lg-a" id="legendPumpA">PUMP A</span>
                 <span class="lg lg-b" id="legendPumpB">PUMP B</span>
@@ -59,13 +67,14 @@
             </div>
             <div class="chart-wrap">
               <svg id="chart" viewBox="0 0 960 300" role="img" aria-label="Pump A 및 Pump B 압력 트렌드"></svg>
+              <div class="chart-tooltip" id="chartTooltip" hidden></div>
               <p class="chart-empty" id="chartEmpty">모니터 세션이 필요합니다 — 로그인하면 기록이 시작됩니다.</p>
             </div>
           </section>
         </div>
 
-        <div class="panel-row split">
-          <section class="panel run-panel">
+        <div class="panel-row split" data-tab-section="operation">
+          <section class="panel run-panel" id="runPanel" data-active="false">
             <div class="panel-head">
               <h2>LCP JET RUN</h2>
               <span class="stage-chip" id="runStageChip" data-stage="idle">대기</span>
@@ -73,7 +82,10 @@
             </div>
 
             <div class="run-body">
-              <p class="multi-pump-warning" id="multiPumpWarning" hidden>다중 펌프에서는 SYSTEM START가 모든 펌프를 함께 켭니다. 자동운전 역할이 정의될 때까지 LCP JET RUN은 잠겨 있습니다.</p>
+              <button type="button" class="multi-pump-warning" id="multiPumpWarning" aria-expanded="false" hidden>
+                <span>⚠ LCP 자동운전 잠김 · 다중 펌프</span>
+                <small>다중 펌프에서는 SYSTEM START가 모든 펌프를 함께 켭니다. 자동운전 역할이 정의될 때까지 LCP JET RUN은 잠겨 있습니다.</small>
+              </button>
               <div class="run-config">
                 <label class="field-box wide">
                   <span>모드</span>
@@ -116,7 +128,7 @@
           </section>
         </div>
 
-        <div class="panel-row info-row">
+        <div class="panel-row info-row" data-tab-section="method" hidden>
           <section class="panel">
             <div class="panel-head">
               <h2>METHOD PARAMETERS</h2>
@@ -184,8 +196,8 @@
           </section>
         </div>
 
-        <div class="panel-row system-row">
-          <section class="panel">
+        <div class="panel-row system-row" id="managementRow" hidden>
+          <section class="panel" data-tab-section="system" hidden>
             <div class="panel-head">
               <h2>SAFETY &amp; COMMUNICATION</h2>
               <span class="health-chip" id="commState" data-state="wait">WAIT</span>
@@ -201,7 +213,7 @@
             <div class="alarm-list" id="alarmList"><p class="empty-note">활성 알람이 없습니다.</p></div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-tab-section="records" hidden>
             <div class="panel-head">
               <h2>AUDIT &amp; EXPORT</h2>
               <span class="head-note">SQLITE · HASH CHAIN</span>
@@ -223,11 +235,12 @@
       </main>
     </div>
 
-    <div class="commandbar">
+    <div class="commandbar" id="commandbar" data-auth="logged-out">
       <div class="cmd-group access-group">
         <span class="cmd-title">ACCESS</span>
-        <label class="input"><span>USER ID</span><input id="userId" autocomplete="username" spellcheck="false"></label>
-        <label class="input"><span>PASSWORD</span><input id="password" type="password" autocomplete="current-password"></label>
+        <span class="access-session" id="accessSession" hidden><i></i><b>NONE</b></span>
+        <label class="input access-credential"><span>USER ID</span><input id="userId" autocomplete="username" spellcheck="false"></label>
+        <label class="input access-credential"><span>PASSWORD</span><input id="password" type="password" autocomplete="current-password"></label>
         <button type="button" class="btn" id="loginBtn">LOG IN</button>
         <button type="button" class="btn" id="logoutBtn" disabled>LOG OUT</button>
       </div>
