@@ -108,12 +108,14 @@ class JetRunController:
         log: Any,
         poll_seconds: float = 1.0,
         on_sample: Callable[[Any, Any, Any], None] | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._client = client
         self._execute = execute
         self._log = log
         self._poll_seconds = poll_seconds
         self._on_sample = on_sample
+        self._on_event = on_event
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
 
@@ -274,6 +276,11 @@ class JetRunController:
             self._events.append(entry)
             if len(self._events) > 40:
                 del self._events[:-40]
+        if self._on_event:
+            try:
+                self._on_event(dict(entry))
+            except Exception as exc:  # audit failure must not stop the safety loop
+                self._log.error("run audit callback failed: %s", exc)
         self._log.warning("LCP jet run: %s", message)
 
     def state(self) -> dict[str, Any]:
