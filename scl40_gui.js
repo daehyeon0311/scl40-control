@@ -53,6 +53,7 @@ const state = {
   accessPin: sessionStorage.getItem("scl40AccessPin") || "",
   pollTimer: null,
   chartFrame: null,
+  systemCommand: { action: null, phase: null, timer: null },
   trendSinceByUnit: {},
   limits: {},
   pumps: [],
@@ -718,9 +719,10 @@ function render(data, { chart = true } = {}) {
   setText("lastOperator", activity.operator_ip);
 
   const commandReady = state.controlEnabled && state.loggedIn && !activity.busy;
+  const commandPending = state.systemCommand.phase === "pending";
   const runActive = !!data.run?.active;
-  $("startBtn").disabled = !commandReady || runActive || state.pumps.length === 0;
-  $("stopBtn").disabled = !commandReady;
+  $("startBtn").disabled = !commandReady || commandPending || runActive || state.pumps.length === 0;
+  $("stopBtn").disabled = !commandReady || commandPending;
   $("setFlowBtn").disabled = !commandReady || runActive;
   $("loginBtn").disabled = state.loggedIn;
   $("logoutBtn").disabled = !state.loggedIn;
@@ -847,9 +849,36 @@ async function setFlow() {
   await refresh(false);
 }
 
+function showSystemCommandState(action, phase = null) {
+  const command = state.systemCommand;
+  clearTimeout(command.timer);
+  command.action = phase ? action : null;
+  command.phase = phase;
+
+  for (const name of ["start", "stop"]) {
+    const button = $(`${name}Btn`);
+    const active = name === action && phase;
+    button.classList.toggle("command-pending", active && phase === "pending");
+    button.classList.toggle("command-success", active && phase === "success");
+    button.classList.toggle("command-error", active && phase === "error");
+    button.setAttribute("aria-busy", active && phase === "pending" ? "true" : "false");
+    button.textContent = active
+      ? phase === "pending"
+        ? (name === "start" ? "STARTING…" : "STOPPING…")
+        : phase === "success"
+          ? (name === "start" ? "STARTED" : "STOPPED")
+          : "FAILED"
+      : `${name.toUpperCase()} ALL`;
+  }
+}
+
 async function command(action) {
+  if (state.systemCommand.phase === "pending") return;
   const targets = state.pumps.map((pump) => `Unit ${pump.unit_id} ${pump.model}: ${pump.method?.flow ?? "—"} mL/min`).join("\n");
   if (action === "start" && !confirm(`SYSTEM START는 연결된 모든 펌프를 함께 켭니다.\n\n${targets}\n\n계속할까요?`)) return;
+  showSystemCommandState(action, "pending");
+  $("startBtn").disabled = true;
+  $("stopBtn").disabled = true;
   try {
     const data = await api(`/api/control/${action}`, {
       method: "POST",
@@ -857,10 +886,16 @@ async function command(action) {
       body: JSON.stringify({ confirmation: action.toUpperCase() }),
     });
     logLine("warn", `SYSTEM ${data.action} 명령 전송 · 장비 응답 ${data.response_root}`);
+    showSystemCommandState(action, "success");
   } catch (error) {
     logLine("error", error.message);
+    showSystemCommandState(action, "error");
   }
-  setTimeout(() => refresh(false), 400);
+  await refresh(false);
+  state.systemCommand.timer = setTimeout(() => {
+    showSystemCommandState(action, null);
+    if (state.lastData) render(state.lastData, { chart: false });
+  }, 1200);
 }
 
 /* ---------- wiring ---------- */
