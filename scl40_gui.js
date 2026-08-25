@@ -401,17 +401,13 @@ function renderRun(run, monitorPressure) {
   const stage = run.stage || "idle";
   const active = !!run.active;
 
-  $("runStageCard").dataset.stage = stage;
+  $("runHeaderStatus").dataset.stage = stage;
+  $("runHeaderStatus").title = run.detail || "런이 실행 중이 아닙니다.";
+  setText("runHeaderText", run.stage_label, "대기");
   $("runStageChip").dataset.stage = stage;
   $("runStageChip").textContent = run.stage_label || "대기";
-  setText("runStageText", run.stage_label, "대기");
-  setText("runStageNote", run.detail, "런이 실행 중이 아닙니다.");
   setText("runDetail", run.detail, "시작 전");
   setText("statusRun", `RUN ${stage}`);
-
-  const waiting = active && !run.watching;
-  $("runSettleBar").hidden = !waiting;
-  if (waiting) $("runSettleFill").style.width = "100%";
 
   const mpa = (value) => (value === null || value === undefined ? null : `${value.toFixed(2)} MPa`);
   setText("runThreshold", mpa(run.threshold));
@@ -623,14 +619,6 @@ function render(data, { chart = true } = {}) {
   const pumpB = state.pumps.find((item) => item.unit_id === "B");
   setText("legendPumpA", pumpA ? `PUMP A · ${pumpA.model}` : "PUMP A");
   setText("legendPumpB", pumpB ? `PUMP B · ${pumpB.model}` : "PUMP B");
-  setText("pumpStateLabel", `PUMP ${state.selectedUnit}`);
-
-  const pumpRunning = monitor.pump_on;
-  const pumpNode = $("pumpState");
-  pumpNode.dataset.state = pumpRunning === true ? "running" : pumpRunning === false ? "stopped" : "unknown";
-  setText("pumpStateText", pumpRunning === true ? "RUNNING" : pumpRunning === false ? "STOPPED" : "UNKNOWN");
-  setText("pumpStateNote", `OpState ${monitor.op_state_code || "—"}`);
-
   setText("methodAlias", `PUMP ${state.selectedUnit} · ${method.alias ? `${method.alias} · ` : ""}No ${method.number ?? "—"}`);
   setText("methodFlow", num(method.flow, 4));
   setText("methodPmax", num(method.pmax, 1));
