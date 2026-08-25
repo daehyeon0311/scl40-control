@@ -34,14 +34,7 @@
     <div class="workspace">
       <main class="main">
 
-        <nav class="workspace-tabs" aria-label="Dashboard sections">
-          <button type="button" data-workspace-tab="operation" class="on">OPERATION</button>
-          <button type="button" data-workspace-tab="method">METHOD</button>
-          <button type="button" data-workspace-tab="records">RECORDS</button>
-          <button type="button" data-workspace-tab="system">SYSTEM</button>
-        </nav>
-
-        <div class="overview-row" data-tab-section="operation">
+        <div class="overview-row">
           <section class="panel pump-deck-panel">
             <div class="panel-head">
               <h2>PUMP DECK</h2>
@@ -73,7 +66,7 @@
           </section>
         </div>
 
-        <div class="panel-row split" data-tab-section="operation">
+        <div class="panel-row split">
           <section class="panel run-panel" id="runPanel" data-active="false">
             <div class="panel-head">
               <h2>LCP JET RUN</h2>
@@ -128,7 +121,7 @@
           </section>
         </div>
 
-        <div class="panel-row info-row" data-tab-section="method" hidden>
+        <div class="panel-row info-row">
           <section class="panel">
             <div class="panel-head">
               <h2>METHOD PARAMETERS</h2>
@@ -196,8 +189,8 @@
           </section>
         </div>
 
-        <div class="panel-row system-row" id="managementRow" hidden>
-          <section class="panel" data-tab-section="system" hidden>
+        <div class="panel-row system-row" id="managementRow">
+          <section class="panel">
             <div class="panel-head">
               <h2>SAFETY &amp; COMMUNICATION</h2>
               <span class="health-chip" id="commState" data-state="wait">WAIT</span>
@@ -213,7 +206,7 @@
             <div class="alarm-list" id="alarmList"><p class="empty-note">활성 알람이 없습니다.</p></div>
           </section>
 
-          <section class="panel" data-tab-section="records" hidden>
+          <section class="panel">
             <div class="panel-head">
               <h2>AUDIT &amp; EXPORT</h2>
               <span class="head-note">SQLITE · HASH CHAIN</span>

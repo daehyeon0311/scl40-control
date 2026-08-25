@@ -61,7 +61,6 @@ const state = {
   run: { stage: "idle", active: false },
   seenRunEvents: new Set(),
   authorization: { role: "viewer", control: false, pressure_limits: false, acknowledge_alarms: false },
-  workspaceTab: localStorage.getItem("scl40WorkspaceTab") || "operation",
   chartMeta: null,
 };
 
@@ -629,23 +628,6 @@ async function acknowledgeAlarm(alarmId) {
   }
 }
 
-function switchWorkspaceTab(tabName) {
-  const allowed = new Set(["operation", "method", "records", "system"]);
-  const selected = allowed.has(tabName) ? tabName : "operation";
-  state.workspaceTab = selected;
-  localStorage.setItem("scl40WorkspaceTab", selected);
-  for (const button of document.querySelectorAll("[data-workspace-tab]")) {
-    const active = button.dataset.workspaceTab === selected;
-    button.classList.toggle("on", active);
-    button.setAttribute("aria-selected", active ? "true" : "false");
-  }
-  for (const section of document.querySelectorAll("[data-tab-section]")) {
-    section.hidden = section.dataset.tabSection !== selected;
-  }
-  $("managementRow").hidden = !["records", "system"].includes(selected);
-  if (selected === "operation") scheduleChartRender();
-}
-
 /* ---------- rendering ---------- */
 
 function selectPump(unitId) {
@@ -1043,9 +1025,6 @@ $("password").addEventListener("keydown", (event) => { if (event.key === "Enter"
 $("flowInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !$("setFlowBtn").disabled) setFlow();
 });
-for (const button of document.querySelectorAll("[data-workspace-tab]")) {
-  button.addEventListener("click", () => switchWorkspaceTab(button.dataset.workspaceTab));
-}
 $("multiPumpWarning").addEventListener("click", () => {
   const expanded = $("multiPumpWarning").getAttribute("aria-expanded") === "true";
   $("multiPumpWarning").setAttribute("aria-expanded", expanded ? "false" : "true");
@@ -1092,7 +1071,6 @@ setInterval(() => { $("clock").textContent = clock(new Date()); }, 1000);
 $("clock").textContent = clock(new Date());
 applyRunDefaults(null);
 updateRunMode();
-switchWorkspaceTab(state.workspaceTab);
 logLine("info", "콘솔 시작 · SCL-40 상태 조회");
 scheduleChartRender();
 refresh(true);

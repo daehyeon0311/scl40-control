@@ -217,31 +217,6 @@ output, input, button, table { font: inherit; }
   padding: 10px;
 }
 
-.workspace-tabs {
-  position: sticky;
-  top: -10px;
-  z-index: 8;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 0 0 8px;
-  background: var(--chrome);
-}
-
-.workspace-tabs button {
-  height: 32px;
-  border: 1px solid var(--rule);
-  border-right: 0;
-  background: #f7f8fa;
-  color: var(--ink-2);
-  font: 700 10px var(--ui);
-  letter-spacing: .13em;
-  cursor: pointer;
-}
-.workspace-tabs button:last-child { border-right: 1px solid var(--rule); }
-.workspace-tabs button:hover { color: var(--accent); background: #fff; }
-.workspace-tabs button.on { color: #fff; background: var(--accent); border-color: var(--accent); }
-[data-tab-section][hidden] { display: none !important; }
-
 .sim-strip[hidden] { display: none; }
 
 /* ---------- multi-pump deck ---------- */
@@ -748,7 +723,6 @@ table.data.param th { width: auto; }
 .panel-row.info-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .panel-row.info-row > .panel { min-width: 0; }
 .panel-row.system-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-#managementRow { grid-template-columns: minmax(0, 1fr); }
 
 .health-chip {
   padding: 3px 8px; border: 1px solid var(--rule); border-radius: 10px;
