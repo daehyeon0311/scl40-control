@@ -749,8 +749,8 @@ table.data td.u {
 /* ---------- command bar ---------- */
 
 .commandbar {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(220px, .75fr);
   gap: 6px;
   padding: 9px 8px;
   background: var(--panel);
@@ -767,6 +767,8 @@ table.data td.u {
   border-radius: 2px;
   background: #fbfcfd;
   position: relative;
+  min-width: 0;
+  width: 100%;
 }
 
 .cmd-title {
@@ -781,14 +783,16 @@ table.data td.u {
   color: var(--ink-3);
 }
 
-.cmd-group.run-group { margin-left: auto; }
+.cmd-group.run-group { margin-left: 0; }
 
-/* Fit the three command groups on one row at common lab-console widths. */
-.access-group .input input { width: 105px; }
-.access-group .btn { min-width: 68px; padding-inline: 8px; }
-.flow-group .input select { width: 120px; min-width: 120px; }
-.flow-group .input.num input { width: 120px; }
-.flow-group .btn { min-width: 68px; padding-inline: 8px; }
+/* The three groups divide the full bar width and resize with the window. */
+.access-group .input,
+.flow-group .input { flex: 1 1 0; min-width: 0; }
+.access-group .input input,
+.flow-group .input input,
+.flow-group .input select { width: 100%; min-width: 0; }
+.access-group .btn,
+.flow-group .btn { flex: 0 0 68px; min-width: 68px; padding-inline: 8px; }
 
 .input {
   display: flex;
@@ -853,8 +857,9 @@ table.data td.u {
 }
 
 .run-group .btn {
-  width: 104px;
-  min-width: 104px;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
   padding: 0 10px;
   letter-spacing: .06em;
   white-space: nowrap;
@@ -964,7 +969,7 @@ table.data td.u {
   .overview-row .pump-deck { grid-template-columns: 1fr; }
   .cmd-group.run-group { margin-left: 0; }
   .cmd-group { flex-wrap: wrap; }
-  .commandbar { flex-wrap: wrap; }
+  .commandbar { display: flex; flex-wrap: wrap; }
   .input input, .input.num input { width: 100%; }
   .clock { display: none; }
 }
