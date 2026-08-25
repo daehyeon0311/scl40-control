@@ -167,10 +167,12 @@ Binding to `0.0.0.0` allows other computers to reach the dashboard, but the Wind
 firewall and network routing must also permit TCP port 8765.
 
 1. Give the controller PC a stable LAN/Wi-Fi address.
-2. Review the hard-coded local address and source subnet in
-   `ENABLE_SCL40_WIFI_FIREWALL.ps1`.
-3. Run `ENABLE_SCL40_WIFI_FIREWALL.cmd` once as Administrator.
-4. From another computer, open `http://<controller-pc-ip>:8765/`.
+2. Enable LAN access in the packaged app's first-run settings, or launch the source
+   version with `--bind 0.0.0.0`.
+3. If Windows Firewall asks, allow the application on **Private networks** only.
+4. If your institution manages the firewall centrally, request an inbound TCP 8765
+   rule restricted to the experiment subnet.
+5. From another computer, open `http://<controller-pc-ip>:8765/`.
 
 > [!IMPORTANT]
 > The dashboard uses plain HTTP and is intended for a trusted private network or a
@@ -405,7 +407,6 @@ alarms, CSV export, and audit persistence.
 | `test_scl40_multi.py` | Regression test suite |
 | `START_SCL40_GUI.cmd` | Windows launcher |
 | `OPEN_SETTINGS.cmd` | Reopen packaged-app settings |
-| `ENABLE_SCL40_WIFI_FIREWALL.*` | Site-specific LAN firewall helper |
 | `.github/workflows/windows-release.yml` | Tested Windows EXE and Release build |
 
 ## Contributing
@@ -413,9 +414,8 @@ alarms, CSV export, and audit persistence.
 Protocol changes should include captured read-only evidence or a clearly documented,
 operator-approved physical test. Never infer LC-40 behavior from an older serial
 protocol, and never commit credentials, session IDs, instrument logs, or site network
-details.
-
-Implementation notes and open protocol questions are tracked in
+details. Use a GitHub issue or pull request to document reproducible evidence and
+the exact firmware/module combination involved.
 
 ## Disclaimer
 
