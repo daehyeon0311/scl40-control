@@ -6,10 +6,12 @@ These tests only use ``scl40_sim``. They never contact the real instrument.
 from __future__ import annotations
 
 import unittest
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from scl40_gui import RolePolicy, SCL40Client, SCL40Error, SnapshotCache, TrendRecorder
+from scl40_jetrun import JetRunController, STAGE_FINISHED, STAGE_RUN
 from scl40_sim import start_simulator
 from scl40_store import AuditStore, CommunicationHealth
 
@@ -131,6 +133,55 @@ class MultiPumpTests(unittest.TestCase):
                 self.assertEqual(store.stats()["active_alarms"], 0)
             finally:
                 store.close()
+
+    def test_timed_run_sets_flow_and_stops_after_duration(self) -> None:
+        class TimedClient:
+            session_id = "test-session"
+
+            def __init__(self) -> None:
+                self.pump_on = False
+                self.commands = []
+
+            @staticmethod
+            def get_config():
+                return {"pumps": [{"unit_id": "A", "model": "LC-40i"}]}
+
+            def set_method_params(self, params):
+                self.commands.append(("flow", str(params["flow"])))
+                return {}
+
+            def send_pump(self, start):
+                self.pump_on = bool(start)
+                self.commands.append(("pump", self.pump_on))
+                return {}
+
+            def get_monitor(self):
+                return {"available": True, "pressure": "0.20", "flow": "0.1000", "pump_on": self.pump_on}
+
+        client = TimedClient()
+        controller = JetRunController(
+            client,
+            lambda _action, _operator, operation: operation(),
+            log=type("Log", (), {"warning": lambda *args: None, "error": lambda *args: None})(),
+            poll_seconds=3600,
+        )
+        try:
+            state = controller.start({
+                "mode": "timed", "run_flow": "0.1000", "duration_seconds": "2",
+                "pressure_limit": "9.0",
+            }, "tester")
+            self.assertEqual(state["stage"], STAGE_RUN)
+            self.assertEqual(client.commands, [("flow", "0.1000"), ("pump", True)])
+
+            controller._stage_started = time.monotonic() - 3
+            controller._tick()
+            state = controller.state()
+            self.assertEqual(state["stage"], STAGE_FINISHED)
+            self.assertFalse(client.pump_on)
+            self.assertEqual(client.commands[-1], ("pump", False))
+            self.assertTrue(any(event["kind"] == "duration_complete" for event in state["events"]))
+        finally:
+            controller.shutdown()
 
 
 if __name__ == "__main__":

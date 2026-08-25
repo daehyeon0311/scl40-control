@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LCP jet run controller: pressure-triggered water fill, extrusion and stop.
+"""LCP jet run controller: pressure-triggered or timed pump operation.
 
 What this automates
 -------------------
@@ -65,6 +65,7 @@ FIELD_LIMITS: dict[str, dict[str, Any]] = {
 }
 SETTLE_MIN, SETTLE_MAX = 0.0, 300.0
 TIMEOUT_MAX = 24 * 3600.0
+DURATION_MIN, DURATION_MAX = 1.0, 24 * 3600.0
 
 
 class RunError(RuntimeError):
@@ -138,8 +139,8 @@ class JetRunController:
 
     def start(self, body: dict[str, Any], operator: str) -> dict[str, Any]:
         mode = str(body.get("mode") or "lcp_jet")
-        if mode not in ("lcp_jet", "watch"):
-            raise RunError("모드는 lcp_jet 또는 watch여야 합니다.")
+        if mode not in ("lcp_jet", "watch", "timed"):
+            raise RunError("모드는 lcp_jet, watch 또는 timed여야 합니다.")
         with self._lock:
             if self.stage in ACTIVE_STAGES:
                 raise RunError("이미 진행 중인 런이 있습니다. 먼저 중단하세요.")
@@ -150,16 +151,17 @@ class JetRunController:
             units = ", ".join(f"{pump['unit_id']}({pump['model']})" for pump in connected_pumps)
             raise RunError(
                 "다중 펌프에서는 SYSTEM START가 모든 펌프를 함께 켭니다. "
-                f"현재 연결: {units}. 두 펌프의 자동운전 역할이 정의될 때까지 LCP JET RUN은 잠겨 있습니다."
+                f"현재 연결: {units}. 두 펌프의 자동운전 역할이 정의될 때까지 자동운전은 잠겨 있습니다."
             )
 
         config: dict[str, Any] = {
             "mode": mode,
             "run_flow": parse_decimal(body.get("run_flow"), "run_flow"),
-            "run_pressure": parse_decimal(body.get("run_pressure"), "run_pressure"),
+            "run_pressure": parse_decimal(body.get("run_pressure"), "run_pressure") if mode != "timed" else None,
             "pressure_limit": parse_decimal(body.get("pressure_limit"), "pressure_limit", required=False),
-            "settle_seconds": parse_seconds(body.get("settle_seconds"), "안정화 시간", SETTLE_MIN, SETTLE_MAX, 15.0),
-            "stage_timeout": parse_seconds(body.get("stage_timeout"), "단계 제한 시간", 0.0, TIMEOUT_MAX, 1800.0),
+            "settle_seconds": parse_seconds(body.get("settle_seconds"), "안정화 시간", SETTLE_MIN, SETTLE_MAX, 15.0) if mode != "timed" else 0.0,
+            "stage_timeout": parse_seconds(body.get("stage_timeout"), "단계 제한 시간", 0.0, TIMEOUT_MAX, 1800.0) if mode != "timed" else 0.0,
+            "duration_seconds": parse_seconds(body.get("duration_seconds"), "운전 시간", DURATION_MIN, DURATION_MAX, 60.0) if mode == "timed" else None,
             "fill_flow": None,
             "fill_pressure": None,
         }
@@ -187,6 +189,8 @@ class JetRunController:
 
         if mode == "lcp_jet":
             self._begin_fill()
+        elif mode == "timed":
+            self._begin_timed()
         else:
             self._begin_watch()
         return self.state()
@@ -203,6 +207,18 @@ class JetRunController:
         """Watch only: the operator filled and started the pump themselves."""
         self._log.warning("LCP jet run: watch-only run requested by %s", self._operator)
         self._record("watch_started", "감시만 하는 모드로 시작")
+        self._enter_stage(STAGE_RUN)
+
+    def _begin_timed(self) -> None:
+        flow = self.config["run_flow"]
+        duration = self.config["duration_seconds"]
+        self._log.warning(
+            "Timed run: %s mL/min for %.0f seconds requested by %s",
+            flow, duration, self._operator,
+        )
+        self._execute("TIMED FLOW", self._operator, lambda: self._client.set_method_params({"flow": flow}))
+        self._execute("TIMED START", self._operator, lambda: self._client.send_pump(start=True))
+        self._record("timed_started", f"시간 운전 시작 · {flow} mL/min · {duration:.0f}초")
         self._enter_stage(STAGE_RUN)
 
     def abort(self, reason: str, operator: str, stop_pump: bool = True) -> dict[str, Any]:
@@ -250,6 +266,9 @@ class JetRunController:
             threshold = self._threshold(stage)
             if stage == STAGE_FILL:
                 self._detail = f"즉시 감시 중 · 실험 유량 전환 압력 {threshold} MPa"
+            elif self.config.get("mode") == "timed":
+                self._watching = True
+                self._detail = f"시간 운전 중 · {self.config['duration_seconds']:.0f}초 남음"
             else:
                 self._detail = f"안정화 후 압력이 {threshold} MPa 아래로 내려오면 감시를 시작합니다."
 
@@ -324,6 +343,15 @@ class JetRunController:
         with self._lock:
             if self.stage not in ACTIVE_STAGES:
                 return
+            mode = self.config.get("mode")
+            elapsed = time.monotonic() - self._stage_started
+            duration = self.config.get("duration_seconds")
+
+        # A timed stop must not be delayed by a failed monitor response.
+        if mode == "timed" and duration is not None and elapsed >= duration:
+            self._record("duration_complete", f"설정한 운전 시간 {duration:.0f}초 완료")
+            self._stop_now(STAGE_FINISHED, "설정 시간 완료 — 펌프 정지")
+            return
 
         monitor = self._client.get_monitor()
         if not monitor.get("available"):
@@ -360,6 +388,13 @@ class JetRunController:
         if limit is not None and pressure >= float(limit):
             self._record("limit", f"절대 압력 상한 도달 · {pressure:.2f} ≥ {float(limit):.2f} MPa")
             self._stop_now(STAGE_ABORTED, "절대 압력 상한 도달")
+            return
+
+        if config.get("mode") == "timed":
+            remaining = max(0.0, float(config["duration_seconds"]) - elapsed)
+            with self._lock:
+                self._watching = True
+                self._detail = f"시간 운전 중 · {remaining:.0f}초 남음 (현재 {pressure:.2f} MPa)"
             return
 
         timeout = config.get("stage_timeout") or 0.0
