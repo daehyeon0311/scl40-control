@@ -1018,52 +1018,15 @@ table.data td.u {
 
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn:active:not(:disabled) {
-  transform: translateY(1px);
   box-shadow: inset 0 2px 5px rgba(23, 34, 48, .28);
 }
 
-.btn.command-pending,
-.btn.command-success,
-.btn.command-error {
-  transform: translateY(1px);
-  box-shadow: inset 0 3px 7px rgba(23, 34, 48, .34);
-}
-
-.btn.command-pending { cursor: wait; }
-
-.btn.command-pending::after {
-  content: "";
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  margin-left: 8px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  vertical-align: -2px;
-  animation: command-spin .7s linear infinite;
-}
-
-.btn.command-success {
-  outline: 2px solid rgba(29, 122, 74, .22);
-  outline-offset: 2px;
-}
-
-.btn.command-success::after {
-  content: "\2713";
-  margin-left: 8px;
-}
-
-.btn.command-error {
-  border-color: var(--halt);
-  outline: 2px solid rgba(177, 51, 46, .2);
-  outline-offset: 2px;
-}
-
-@keyframes command-spin { to { transform: rotate(360deg); } }
-
-@media (prefers-reduced-motion: reduce) {
-  .btn.command-pending::after { animation: none; }
+.run-group .btn {
+  width: 112px;
+  min-width: 112px;
+  padding: 0 10px;
+  letter-spacing: .06em;
+  white-space: nowrap;
 }
 
 .btn:disabled {
@@ -1089,19 +1052,23 @@ table.data td.u {
 
 .btn.stop:not(:disabled):hover { background: #f7dedc; color: var(--halt); }
 
-.btn.start.command-pending:disabled {
+.btn.start.command-pressed {
   cursor: wait;
   border-color: #145f3b;
   background: #116b3c;
   color: #ffffff;
+  box-shadow: inset 0 4px 8px rgba(4, 39, 22, .52), inset 0 0 0 1px rgba(0, 0, 0, .15);
 }
 
-.btn.stop.command-pending:disabled {
+.btn.stop.command-pressed {
   cursor: wait;
   border-color: #9f2d29;
   background: #efd3d1;
   color: #8f2723;
+  box-shadow: inset 0 4px 8px rgba(86, 20, 17, .34), inset 0 0 0 1px rgba(0, 0, 0, .12);
 }
+
+.btn.command-pressed:not(.command-pending) { cursor: default; }
 
 .btn.start::before,
 .btn.stop::before {

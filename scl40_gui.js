@@ -53,7 +53,7 @@ const state = {
   accessPin: sessionStorage.getItem("scl40AccessPin") || "",
   pollTimer: null,
   chartFrame: null,
-  systemCommand: { action: null, phase: null, timer: null },
+  systemCommand: { action: null, phase: null },
   trendSinceByUnit: {},
   limits: {},
   pumps: [],
@@ -723,6 +723,21 @@ function render(data, { chart = true } = {}) {
   const runActive = !!data.run?.active;
   $("startBtn").disabled = !commandReady || commandPending || runActive || state.pumps.length === 0;
   $("stopBtn").disabled = !commandReady || commandPending;
+  const pumpStates = state.pumps.map((pump) => pump.monitor?.pump_on);
+  const allRunning = pumpStates.length > 0 && pumpStates.every((running) => running === true);
+  const allStopped = pumpStates.length > 0 && pumpStates.every((running) => running === false);
+  const pressedAction = commandPending
+    ? state.systemCommand.action
+    : allRunning
+      ? "start"
+      : allStopped
+        ? "stop"
+        : null;
+  for (const name of ["start", "stop"]) {
+    const pressed = name === pressedAction;
+    $(`${name}Btn`).classList.toggle("command-pressed", pressed);
+    $(`${name}Btn`).setAttribute("aria-pressed", pressed ? "true" : "false");
+  }
   $("setFlowBtn").disabled = !commandReady || runActive;
   $("loginBtn").disabled = state.loggedIn;
   $("logoutBtn").disabled = !state.loggedIn;
@@ -851,24 +866,16 @@ async function setFlow() {
 
 function showSystemCommandState(action, phase = null) {
   const command = state.systemCommand;
-  clearTimeout(command.timer);
   command.action = phase ? action : null;
   command.phase = phase;
 
   for (const name of ["start", "stop"]) {
     const button = $(`${name}Btn`);
-    const active = name === action && phase;
-    button.classList.toggle("command-pending", active && phase === "pending");
-    button.classList.toggle("command-success", active && phase === "success");
-    button.classList.toggle("command-error", active && phase === "error");
-    button.setAttribute("aria-busy", active && phase === "pending" ? "true" : "false");
-    button.textContent = active
-      ? phase === "pending"
-        ? (name === "start" ? "STARTING…" : "STOPPING…")
-        : phase === "success"
-          ? (name === "start" ? "STARTED" : "STOPPED")
-          : "FAILED"
-      : `${name.toUpperCase()} ALL`;
+    const pending = name === action && phase === "pending";
+    button.classList.toggle("command-pending", pending);
+    button.classList.toggle("command-pressed", pending);
+    button.setAttribute("aria-busy", pending ? "true" : "false");
+    button.textContent = `${name.toUpperCase()} ALL`;
   }
 }
 
@@ -892,10 +899,8 @@ async function command(action) {
     showSystemCommandState(action, "error");
   }
   await refresh(false);
-  state.systemCommand.timer = setTimeout(() => {
-    showSystemCommandState(action, null);
-    if (state.lastData) render(state.lastData, { chart: false });
-  }, 1200);
+  showSystemCommandState(action, null);
+  if (state.lastData) render(state.lastData, { chart: false });
 }
 
 /* ---------- wiring ---------- */
