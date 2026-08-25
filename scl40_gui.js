@@ -639,31 +639,29 @@ function selectPump(unitId) {
 }
 
 function pumpIllustration(model, unitId) {
-  const modern = /40/i.test(model || "");
+  const series40 = /40/i.test(model || "");
+  // LC-40i uses the more detailed keypad/dial face; LC-20Ai uses the compact face.
+  const detailedFace = series40;
   const svg = svgEl("svg", {
-    class: `pump-illustration ${modern ? "series-40" : "series-20"}`,
+    class: `pump-illustration ${series40 ? "series-40" : "series-20"}`,
     viewBox: "0 0 84 82", role: "img", "aria-label": `${model || "Pump"} 장비 그림`,
   });
   svg.append(svgEl("title", {}, `${model || "Pump"} · Unit ${unitId}`));
   svg.append(svgEl("rect", {
-    x: modern ? 11 : 8, y: modern ? 4 : 8, width: modern ? 62 : 68, height: modern ? 73 : 68,
-    rx: modern ? 6 : 2, fill: modern ? "#f7fafc" : "#eef1f4", stroke: modern ? "#8997a6" : "#707b87",
+    x: detailedFace ? 8 : 11, y: detailedFace ? 8 : 4, width: detailedFace ? 68 : 62, height: detailedFace ? 68 : 73,
+    rx: detailedFace ? 2 : 6, fill: detailedFace ? "#eef1f4" : "#f7fafc", stroke: detailedFace ? "#707b87" : "#8997a6",
   }));
   svg.append(svgEl("rect", {
-    x: modern ? 18 : 15, y: modern ? 13 : 15, width: modern ? 39 : 43, height: modern ? 24 : 18,
-    rx: modern ? 3 : 1, fill: modern ? "#dcecf8" : "#d8e7d2", stroke: modern ? "#76a6c9" : "#78906e",
+    x: detailedFace ? 15 : 18, y: detailedFace ? 15 : 13, width: detailedFace ? 43 : 39, height: detailedFace ? 18 : 24,
+    rx: detailedFace ? 1 : 3, fill: series40 ? "#dcecf8" : "#d8e7d2", stroke: series40 ? "#76a6c9" : "#78906e",
   }));
   svg.append(svgEl("text", {
-    x: modern ? 37.5 : 36.5, y: modern ? 28 : 27, "text-anchor": "middle",
-    "font-family": "Consolas, monospace", "font-size": modern ? 7 : 6.5, "font-weight": 700,
-    fill: modern ? "#0f5fa8" : "#3d6438",
-  }, modern ? "LC-40i" : "LC-20Ai"));
-  svg.append(svgEl("circle", { cx: 65, cy: modern ? 19 : 17, r: 2.6, fill: "#2d8a54" }));
-  if (modern) {
-    svg.append(svgEl("rect", { x: 18, y: 45, width: 46, height: 21, rx: 3, fill: "#e8edf2", stroke: "#b3bec8" }));
-    svg.append(svgEl("circle", { cx: 30, cy: 55.5, r: 6.5, fill: "#d0d8df", stroke: "#8794a1" }));
-    svg.append(svgEl("circle", { cx: 52, cy: 55.5, r: 6.5, fill: "#d0d8df", stroke: "#8794a1" }));
-  } else {
+    x: detailedFace ? 36.5 : 37.5, y: detailedFace ? 27 : 28, "text-anchor": "middle",
+    "font-family": "Consolas, monospace", "font-size": series40 ? 7 : 6.5, "font-weight": 700,
+    fill: series40 ? "#0f5fa8" : "#3d6438",
+  }, series40 ? "LC-40i" : "LC-20Ai"));
+  svg.append(svgEl("circle", { cx: 65, cy: detailedFace ? 17 : 19, r: 2.6, fill: "#2d8a54" }));
+  if (detailedFace) {
     for (let row = 0; row < 2; row += 1) {
       for (let col = 0; col < 4; col += 1) {
         svg.append(svgEl("rect", { x: 16 + col * 9, y: 39 + row * 8, width: 5, height: 4, rx: 1, fill: "#aab2ba" }));
@@ -671,9 +669,13 @@ function pumpIllustration(model, unitId) {
     }
     svg.append(svgEl("circle", { cx: 63, cy: 46, r: 8, fill: "#d7dde2", stroke: "#7b8792" }));
     for (let y = 60; y <= 68; y += 4) svg.append(svgEl("line", { x1: 16, y1: y, x2: 65, y2: y, stroke: "#9aa5af" }));
+  } else {
+    svg.append(svgEl("rect", { x: 18, y: 45, width: 46, height: 21, rx: 3, fill: "#e8edf2", stroke: "#b3bec8" }));
+    svg.append(svgEl("circle", { cx: 30, cy: 55.5, r: 6.5, fill: "#d0d8df", stroke: "#8794a1" }));
+    svg.append(svgEl("circle", { cx: 52, cy: 55.5, r: 6.5, fill: "#d0d8df", stroke: "#8794a1" }));
   }
   svg.append(svgEl("text", {
-    x: modern ? 65 : 61, y: 73, "text-anchor": "middle", "font-family": "Consolas, monospace",
+    x: detailedFace ? 61 : 65, y: 73, "text-anchor": "middle", "font-family": "Consolas, monospace",
     "font-size": 8, "font-weight": 700, fill: "#596675",
   }, unitId));
   return svg;
