@@ -184,6 +184,42 @@
           </section>
         </div>
 
+        <div class="panel-row system-row">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>SAFETY &amp; COMMUNICATION</h2>
+              <span class="health-chip" id="commState" data-state="wait">WAIT</span>
+            </div>
+            <table class="data">
+              <tbody>
+                <tr><th>Last response</th><td id="commLast">—</td></tr>
+                <tr><th>Latency</th><td id="commLatency">—</td></tr>
+                <tr><th>Failures</th><td id="commFailures">0</td></tr>
+                <tr><th>Role</th><td id="roleName">VIEWER</td></tr>
+              </tbody>
+            </table>
+            <div class="alarm-list" id="alarmList"><p class="empty-note">활성 알람이 없습니다.</p></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>AUDIT &amp; EXPORT</h2>
+              <span class="head-note">SQLITE · HASH CHAIN</span>
+            </div>
+            <div class="record-summary">
+              <span><b id="recordSamples">0</b> samples</span>
+              <span><b id="recordEvents">0</b> events</span>
+              <span><b id="recordAlarms">0</b> alarms</span>
+            </div>
+            <div class="export-actions">
+              <button type="button" class="btn ghost-btn" data-export="telemetry">TELEMETRY CSV</button>
+              <button type="button" class="btn ghost-btn" data-export="events">EVENTS CSV</button>
+              <button type="button" class="btn ghost-btn" data-export="alarms">ALARMS CSV</button>
+            </div>
+            <div class="audit-list" id="auditList"><p class="empty-note">기록된 이벤트가 없습니다.</p></div>
+          </section>
+        </div>
+
       </main>
     </div>
 

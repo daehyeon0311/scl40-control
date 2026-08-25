@@ -60,6 +60,7 @@ const state = {
   lastData: null,
   run: { stage: "idle", active: false },
   seenRunEvents: new Set(),
+  authorization: { role: "viewer", control: false, pressure_limits: false, acknowledge_alarms: false },
 };
 
 /* ---------- helpers ---------- */
@@ -103,6 +104,12 @@ function setStatusMessage(message, alert = false) {
   node.classList.toggle("alert", alert);
 }
 
+function shortTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : clock(date);
+}
+
 /* ---------- transport ---------- */
 
 async function api(path, options = {}, allowPinPrompt = true) {
@@ -119,6 +126,25 @@ async function api(path, options = {}, allowPinPrompt = true) {
   }
   if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
+}
+
+async function downloadCsv(kind) {
+  try {
+    const headers = {};
+    if (state.accessPin) headers["X-SCL40-PIN"] = state.accessPin;
+    const response = await fetch(`/api/export.csv?kind=${encodeURIComponent(kind)}`, { cache: "no-store", headers });
+    if (!response.ok) throw new Error(`CSV 다운로드 실패 · HTTP ${response.status}`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `scl40_${kind}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    logLine("ok", `${kind.toUpperCase()} CSV 저장`);
+  } catch (error) {
+    logLine("error", error.message);
+  }
 }
 
 /* ---------- trend chart ---------- */
@@ -348,7 +374,7 @@ function revertParams() {
 
 function updateParamButtons() {
   const dirty = Object.keys(collectParamChanges()).length > 0;
-  const ready = state.controlEnabled && state.loggedIn && !state.run.active;
+  const ready = state.controlEnabled && state.loggedIn && state.authorization.pressure_limits && !state.run.active;
   $("applyBtn").disabled = !dirty || !ready;
   $("revertBtn").disabled = !dirty;
   for (const input of paramInputs()) input.disabled = !ready;
@@ -415,7 +441,7 @@ function renderRun(run, monitorPressure) {
   setText("runPeak", mpa(run.peak));
   setText("runElapsed", active ? `${Math.round(run.elapsed_seconds)} s` : null);
 
-  const ready = state.controlEnabled && state.loggedIn;
+  const ready = state.controlEnabled && state.loggedIn && state.authorization.control;
   const multiPump = state.pumps.length > 1;
   $("runStartBtn").disabled = !ready || active || multiPump;
   $("runAbortBtn").disabled = !ready || !active;
@@ -471,6 +497,83 @@ async function abortRun() {
     logLine("error", error.message);
   }
   await refresh(false);
+}
+
+function renderOperationalRecords(data) {
+  const communication = data.communication || {};
+  const commState = communication.state || "wait";
+  $("commState").dataset.state = commState;
+  $("commState").textContent = commState.toUpperCase();
+  setText("commLast", communication.last_success || "—");
+  setText("commLatency", communication.last_latency_ms === null || communication.last_latency_ms === undefined ? "—" : `${communication.last_latency_ms} ms`);
+  setText("commFailures", `${communication.consecutive_failures || 0} consecutive · ${communication.total_failures || 0} total`);
+  setText("roleName", (state.authorization.role || "viewer").toUpperCase());
+
+  const stats = data.records || {};
+  setText("recordSamples", stats.samples ?? 0);
+  setText("recordEvents", stats.events ?? 0);
+  setText("recordAlarms", stats.active_alarms ?? 0);
+
+  const alarmList = $("alarmList");
+  alarmList.replaceChildren();
+  const alarms = data.alarms || [];
+  if (!alarms.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-note";
+    empty.textContent = "활성 알람이 없습니다.";
+    alarmList.append(empty);
+  }
+  for (const alarm of alarms) {
+    const row = document.createElement("div");
+    row.className = `alarm-row${alarm.acknowledged ? " acknowledged" : ""}`;
+    const code = document.createElement("strong");
+    code.textContent = `${alarm.unit_id ? `${alarm.unit_id} · ` : ""}${alarm.code}`;
+    const message = document.createElement("span");
+    message.textContent = alarm.message;
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "btn ghost-btn";
+    action.textContent = alarm.acknowledged ? "ACKED" : "ACK";
+    action.disabled = !!alarm.acknowledged || !state.authorization.acknowledge_alarms;
+    action.addEventListener("click", () => acknowledgeAlarm(alarm.id));
+    row.append(code, message, action);
+    alarmList.append(row);
+  }
+
+  const audit = $("auditList");
+  audit.replaceChildren();
+  const events = data.recent_events || [];
+  if (!events.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-note";
+    empty.textContent = "기록된 이벤트가 없습니다.";
+    audit.append(empty);
+  }
+  for (const event of events) {
+    const row = document.createElement("div");
+    row.className = "audit-row";
+    const at = document.createElement("time");
+    at.textContent = shortTime(event.timestamp);
+    const action = document.createElement("strong");
+    action.textContent = event.action;
+    const message = document.createElement("span");
+    message.textContent = `${event.unit_id ? `Pump ${event.unit_id} · ` : ""}${event.message}`;
+    row.append(at, action, message);
+    audit.append(row);
+  }
+}
+
+async function acknowledgeAlarm(alarmId) {
+  try {
+    await api("/api/alarms/ack", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alarm_id: alarmId }),
+    });
+    logLine("ok", `알람 #${alarmId} 확인 처리`);
+    await refresh(false);
+  } catch (error) {
+    logLine("error", error.message);
+  }
 }
 
 /* ---------- rendering ---------- */
@@ -605,11 +708,12 @@ function render(data, { chart = true } = {}) {
   const auth = data.auth || {};
   const activity = data.control_activity || {};
   state.loggedIn = !!auth.logged_in;
+  state.authorization = data.authorization || state.authorization;
 
   $("linkState").dataset.state = "online";
   $("linkState").querySelector("b").textContent = "ONLINE";
   setText("latency", `${data.latency_ms} ms`);
-  setText("sessionUser", state.loggedIn ? auth.user_id : "NONE", "NONE");
+  setText("sessionUser", state.loggedIn ? `${auth.user_id} · ${state.authorization.role.toUpperCase()}` : "NONE", "NONE");
 
   setText("controllerModel", controller.model, "SCL-40");
   setText("pumpSummary", state.pumps.map((item) => `${item.model} · Unit ${item.unit_id}`).join("  |  "), "NO PUMP");
@@ -640,7 +744,7 @@ function render(data, { chart = true } = {}) {
   setText("loginState", state.loggedIn ? `web session · ${auth.user_id}` : `device code ${summary.login_state_code || "—"}`);
   setText("lastOperator", activity.operator_ip);
 
-  const commandReady = state.controlEnabled && state.loggedIn && !activity.busy;
+  const commandReady = state.controlEnabled && state.loggedIn && state.authorization.control && !activity.busy;
   const commandPending = state.systemCommand.phase === "pending";
   const runActive = !!data.run?.active;
   $("startBtn").disabled = !commandReady || commandPending || runActive || state.pumps.length === 0;
@@ -693,6 +797,7 @@ function render(data, { chart = true } = {}) {
   $("flowInput").max = String(flowMax);
   setText("flowRangeLabel", `0.0000 – ${flowMax.toFixed(4)}`);
   if (document.activeElement !== $("flowInput")) $("flowInput").value = num(method.flow, 4) || "";
+  renderOperationalRecords(data);
 }
 
 function renderOffline(message) {
@@ -861,6 +966,9 @@ $("password").addEventListener("keydown", (event) => { if (event.key === "Enter"
 $("flowInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !$("setFlowBtn").disabled) setFlow();
 });
+for (const button of document.querySelectorAll("button[data-export]")) {
+  button.addEventListener("click", () => downloadCsv(button.dataset.export));
+}
 
 $("applyBtn").addEventListener("click", applyParams);
 $("revertBtn").addEventListener("click", revertParams);

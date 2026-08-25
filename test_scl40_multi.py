@@ -6,9 +6,12 @@ These tests only use ``scl40_sim``. They never contact the real instrument.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from scl40_gui import SCL40Client, SCL40Error, SnapshotCache, TrendRecorder
+from scl40_gui import RolePolicy, SCL40Client, SCL40Error, SnapshotCache, TrendRecorder
 from scl40_sim import start_simulator
+from scl40_store import AuditStore, CommunicationHealth
 
 
 class MultiPumpTests(unittest.TestCase):
@@ -50,6 +53,14 @@ class MultiPumpTests(unittest.TestCase):
         self.assertEqual(result["method"]["flow"], "0.350")
         self.assertEqual(self.client.get_method("A")["flow"], before_a)
 
+    def test_unit_b_preview_builds_request_without_writing(self) -> None:
+        before = self.client.get_method("B")["flow"]
+        result = self.client.preview_method_params({"flow": "0.275"}, "B")
+        self.assertFalse("/cgi-bin/Method.cgi" in result["request"])
+        self.assertIn("<UnitID>B</UnitID>", result["request"])
+        self.assertIn("<Flow>0.275</Flow>", result["request"])
+        self.assertEqual(self.client.get_method("B")["flow"], before)
+
     def test_tflow_is_not_user_writable(self) -> None:
         self.assertNotIn("tflow", self.client.limit_table())
         with self.assertRaisesRegex(SCL40Error, "변경할 수 없습니다"):
@@ -88,6 +99,38 @@ class MultiPumpTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertTrue(third_fresh)
         self.assertEqual(third["sequence"], 2)
+
+    def test_role_policy_defaults_and_override(self) -> None:
+        policy = RolePolicy({"guest": "viewer", "chemist": "operator"})
+        self.assertEqual(policy.role_for("Admin"), "admin")
+        self.assertTrue(policy.describe("chemist")["control"])
+        self.assertFalse(policy.describe("chemist")["pressure_limits"])
+        self.assertFalse(policy.describe("guest")["control"])
+
+    def test_persistent_history_audit_csv_and_alarm_recovery(self) -> None:
+        with TemporaryDirectory() as temp:
+            store = AuditStore(Path(temp) / "history.sqlite3")
+            try:
+                recorder = TrendRecorder(store, min_interval=0)
+                recorder.record("1.25", "0.20", "0.20", "B", True)
+                self.assertEqual(store.recent_telemetry("B")[0][1:], [1.25, 0.2, 0.2])
+
+                first = store.record_event("command", "TEST", "success", user_id="Admin")
+                second = store.record_event("command", "TEST2", "success", user_id="Admin")
+                events = store.recent_events()
+                self.assertEqual([events[1]["id"], events[0]["id"]], [first, second])
+                self.assertNotEqual(events[0]["entry_hash"], events[1]["entry_hash"])
+                self.assertTrue(store.export_csv("telemetry").startswith(b"\xef\xbb\xbf"))
+
+                health = CommunicationHealth(store)
+                health.failure("timeout")
+                self.assertEqual(health.snapshot()["state"], "stale")
+                self.assertEqual(store.stats()["active_alarms"], 1)
+                health.success(25)
+                self.assertEqual(health.snapshot()["state"], "online")
+                self.assertEqual(store.stats()["active_alarms"], 0)
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":

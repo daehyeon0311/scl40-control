@@ -23,6 +23,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from scl40_jetrun import JetRunController, RunError
+from scl40_store import AuditStore, CommunicationHealth
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -67,6 +68,35 @@ PARAM_SPEC: dict[str, dict[str, Any]] = {
 # already confirmed against the instrument.
 ALWAYS_SENT = ("flow", "tflow")
 USER_WRITABLE_PARAMS = frozenset(("flow", "pmax", "pmin"))
+
+
+class RolePolicy:
+    """Map the active SCL account to dashboard permissions.
+
+    SCL-40 has one instrument session, so this policy deliberately follows that
+    session.  Admin is an administrator by default; other authenticated users
+    are operators; a logged-out dashboard is view-only.
+    """
+
+    def __init__(self, mapping: dict[str, str] | None = None) -> None:
+        self.mapping = {str(k).casefold(): str(v).lower() for k, v in (mapping or {}).items()}
+        invalid = {role for role in self.mapping.values() if role not in {"admin", "operator", "viewer"}}
+        if invalid:
+            raise ValueError(f"invalid dashboard roles: {', '.join(sorted(invalid))}")
+
+    def role_for(self, user_id: str) -> str:
+        if not user_id:
+            return "viewer"
+        return self.mapping.get(user_id.casefold(), "admin" if user_id.casefold() == "admin" else "operator")
+
+    def describe(self, user_id: str) -> dict[str, Any]:
+        role = self.role_for(user_id)
+        return {
+            "role": role,
+            "control": role in {"admin", "operator"},
+            "pressure_limits": role == "admin",
+            "acknowledge_alarms": role in {"admin", "operator"},
+        }
 
 
 class SCL40Error(RuntimeError):
@@ -378,17 +408,12 @@ class SCL40Client:
             )
         return self._format(key, value, decimals)
 
-    def set_method_params(self, updates: dict[str, Any], unit_id: str = "A") -> dict[str, Any]:
-        """Write Method 0 pump parameters and verify every field by readback.
-
-        Only element names and positions observed in the instrument's own
-        Method.cgi read response are emitted. A field the instrument silently
-        ignores fails the readback check instead of passing unnoticed.
-        """
+    def preview_method_params(self, updates: dict[str, Any], unit_id: str = "A") -> dict[str, Any]:
+        """Build and validate the exact Method.cgi request without sending it."""
         if not self.session_id:
-            raise SCL40Error("파라미터 변경 전에 SCL-40 로그인이 필요합니다.")
+            raise SCL40Error("파라미터 확인 전에 SCL-40 로그인이 필요합니다.")
         if not updates:
-            raise SCL40Error("변경할 파라미터가 없습니다.")
+            raise SCL40Error("확인할 파라미터가 없습니다.")
 
         unit_id = unit_id.strip().upper()
         current = self.get_method(unit_id)
@@ -397,9 +422,6 @@ class SCL40Client:
             current_value = str(current.get(key) or "")
             decimals[key] = len(current_value.rsplit(".", 1)[1]) if "." in current_value else self.limits[key]["decimals"]
         values = {key: self._validate(key, raw, decimals.get(key)) for key, raw in updates.items()}
-
-        # Flow and Tflow always travel together in the confirmed request shape,
-        # so unchanged ones are resent with the value the instrument reports.
         for key in ALWAYS_SENT:
             if key not in values:
                 values[key] = self._format(key, current.get(key) or 0, decimals.get(key))
@@ -416,13 +438,24 @@ class SCL40Client:
         ET.SubElement(pump, "UnitID").text = unit_id
         for section in ("Usual", "Detail"):
             keys = [k for k in values if self.limits[k]["section"] == section]
-            if not keys:
-                continue
-            node = ET.SubElement(pump, section)
-            for key in sorted(keys, key=lambda k: self.limits[k]["order"]):
-                ET.SubElement(node, self.limits[key]["tag"]).text = values[key]
+            if keys:
+                node = ET.SubElement(pump, section)
+                for key in sorted(keys, key=lambda k: self.limits[k]["order"]):
+                    ET.SubElement(node, self.limits[key]["tag"]).text = values[key]
+        request = XML_HEADER + ET.tostring(root, encoding="unicode")
+        return {"unit_id": unit_id, "before": current, "values": values, "request": request}
 
-        body = XML_HEADER + ET.tostring(root, encoding="unicode")
+    def set_method_params(self, updates: dict[str, Any], unit_id: str = "A") -> dict[str, Any]:
+        """Write Method 0 pump parameters and verify every field by readback.
+
+        Only element names and positions observed in the instrument's own
+        Method.cgi read response are emitted. A field the instrument silently
+        ignores fails the readback check instead of passing unnoticed.
+        """
+        preview = self.preview_method_params(updates, unit_id)
+        unit_id, current, values, body = (
+            preview["unit_id"], preview["before"], preview["values"], preview["request"]
+        )
         response, _ = self._post_xml("/cgi-bin/Method.cgi", body)
         if response.tag != "Method":
             raise SCL40Error(f"Method 응답 루트가 예상과 다름: {response.tag}")
@@ -459,11 +492,12 @@ class TrendRecorder:
     identical on every connected client.
     """
 
-    def __init__(self, capacity: int = 7200, min_interval: float = 0.5) -> None:
+    def __init__(self, store: AuditStore | None = None, capacity: int = 7200, min_interval: float = 0.5) -> None:
         self._samples: dict[str, deque[tuple[float, float | None, float | None, float | None]]] = {}
         self._capacity = capacity
         self._lock = threading.Lock()
         self._min_interval = min_interval
+        self._store = store
 
     @staticmethod
     def _number(value: Any) -> float | None:
@@ -472,7 +506,10 @@ class TrendRecorder:
         except (TypeError, ValueError):
             return None
 
-    def record(self, pressure: Any, flow: Any, target: Any, unit_id: str = "A") -> None:
+    def record(
+        self, pressure: Any, flow: Any, target: Any, unit_id: str = "A",
+        pump_on: bool | None = None, error_code: str = "",
+    ) -> None:
         now = time.time()
         sample = (round(now, 2), self._number(pressure), self._number(flow), self._number(target))
         if sample[1] is None and sample[2] is None:
@@ -482,10 +519,16 @@ class TrendRecorder:
             if samples and now - samples[-1][0] < self._min_interval:
                 return
             samples.append(sample)
+        if self._store:
+            self._store.record_sample(unit_id, pressure, flow, target, pump_on, error_code, ts=now)
 
     def series(self, since: float = 0.0, unit_id: str = "A") -> tuple[list[list[Any]], float]:
         with self._lock:
-            stored = self._samples.get(unit_id, ())
+            stored = self._samples.get(unit_id)
+            if stored is None:
+                persisted = self._store.recent_telemetry(unit_id, self._capacity) if self._store else []
+                stored = deque((tuple(item) for item in persisted), maxlen=self._capacity)
+                self._samples[unit_id] = stored
             samples = [list(item) for item in stored if item[0] > since]
             until = stored[-1][0] if stored else since
         return samples, until
@@ -527,12 +570,14 @@ class CommandBroker:
     STOP can never interleave with an operator command.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, store: AuditStore, user_getter: Any) -> None:
         self._command_lock = threading.Lock()
         self._activity_lock = threading.Lock()
         self._activity: dict[str, Any] = {
             "busy": False, "operator_ip": "", "action": "", "timestamp": "", "result": "",
         }
+        self._store = store
+        self._user_getter = user_getter
 
     def activity(self) -> dict[str, Any]:
         with self._activity_lock:
@@ -551,10 +596,18 @@ class CommandBroker:
             result = work()
             with self._activity_lock:
                 self._activity.update(busy=False, result="success")
+            self._store.record_event(
+                "command", action, "success", user_id=self._user_getter(), operator_ip=operator,
+                message=f"{action} 완료",
+            )
             return result
-        except Exception:
+        except Exception as exc:
             with self._activity_lock:
                 self._activity.update(busy=False, result="failed")
+            self._store.record_event(
+                "command", action, "failed", user_id=self._user_getter(), operator_ip=operator,
+                message=str(exc),
+            )
             raise
         finally:
             self._command_lock.release()
@@ -565,6 +618,9 @@ def make_handler(
     broker: CommandBroker,
     jetrun: JetRunController,
     recorder: TrendRecorder,
+    store: AuditStore,
+    health: CommunicationHealth,
+    roles: RolePolicy,
     control_enabled: bool,
     log: logging.Logger,
     access_pin: str = "",
@@ -602,10 +658,23 @@ def make_handler(
             self.end_headers()
             self.wfile.write(data)
 
+        def _bytes(self, status: int, data: bytes, content_type: str, filename: str = "") -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            if filename:
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.end_headers()
+            self.wfile.write(data)
+
         def _body(self) -> dict[str, Any]:
             try:
                 length = min(int(self.headers.get("Content-Length", "0")), 8192)
-                return json.loads(self.rfile.read(length).decode("utf-8"))
+                value = json.loads(self.rfile.read(length).decode("utf-8"))
+                if not isinstance(value, dict):
+                    raise SCL40Error("JSON 요청은 객체여야 합니다.")
+                return value
             except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                 raise SCL40Error("잘못된 JSON 요청") from exc
 
@@ -641,17 +710,48 @@ def make_handler(
                 unit_id = str(query.get("unit", ["A"])[0]).strip().upper()
                 samples, until = recorder.series(since, unit_id)
                 self._json(200, {"ok": True, "unit_id": unit_id, "samples": samples, "until": until})
+            elif self.path.split("?", 1)[0] == "/api/export.csv":
+                query = parse_qs(urlparse(self.path).query)
+                kind = str(query.get("kind", ["telemetry"])[0])
+                try:
+                    data = store.export_csv(kind)
+                except ValueError as exc:
+                    self._json(400, {"ok": False, "error": str(exc)})
+                    return
+                self._bytes(200, data, "text/csv; charset=utf-8", f"scl40_{kind}_{datetime.now():%Y%m%d_%H%M%S}.csv")
+            elif self.path.split("?", 1)[0] == "/api/records":
+                query = parse_qs(urlparse(self.path).query)
+                try:
+                    limit = int(query.get("limit", ["50"])[0])
+                except (TypeError, ValueError):
+                    self._json(400, {"ok": False, "error": "limit은 정수여야 합니다."})
+                    return
+                self._json(200, {"ok": True, "events": store.recent_events(limit), "stats": store.stats()})
+            elif self.path.split("?", 1)[0] == "/api/alarms":
+                query = parse_qs(urlparse(self.path).query)
+                active_only = query.get("active", ["0"])[0] == "1"
+                self._json(200, {"ok": True, "alarms": store.recent_alarms(100, active_only)})
+            elif self.path == "/api/capabilities":
+                self._json(200, {"ok": True, **self._capabilities()})
             elif self.path == "/api/snapshot":
                 try:
                     snapshot, fresh = snapshot_cache.get(client.snapshot)
                     if fresh:
+                        health.success(snapshot.get("latency_ms"))
                         for pump in snapshot.get("pumps", []):
                             monitor = pump.get("monitor") or {}
                             if monitor.get("available"):
                                 recorder.record(
                                     monitor.get("pressure"), monitor.get("flow"), monitor.get("target_flow"),
-                                    pump.get("unit_id") or "A",
+                                    pump.get("unit_id") or "A", monitor.get("pump_on"), monitor.get("error") or "",
                                 )
+                                store.resolve_alarm("MONITOR_UNAVAILABLE", pump.get("unit_id") or "")
+                            elif snapshot.get("auth", {}).get("logged_in"):
+                                store.raise_alarm(
+                                    "MONITOR_UNAVAILABLE", monitor.get("reason") or "모니터 데이터 없음",
+                                    unit_id=pump.get("unit_id") or "",
+                                )
+                    authorization = roles.describe(client.user_id)
                     self._json(200, {
                         **snapshot,
                         "snapshot_cached": not fresh,
@@ -660,19 +760,30 @@ def make_handler(
                         "simulated": simulated,
                         "limits": client.limit_table(),
                         "run": jetrun.state(),
+                        "communication": health.snapshot(),
+                        "authorization": authorization,
+                        "records": store.stats(),
+                        "alarms": store.recent_alarms(8, active_only=True),
+                        "recent_events": store.recent_events(8),
+                        "capabilities": self._capabilities(),
                     })
                 except SCL40Error as exc:
                     log.warning("snapshot failed: %s", exc)
+                    health.failure(exc)
                     self._json(502, {
                         "ok": False, "error": str(exc), "host": client.host,
                         "control_enabled": control_enabled, "simulated": simulated,
                         "run": jetrun.state(),
+                        "communication": health.snapshot(),
+                        "alarms": store.recent_alarms(8, active_only=True),
                     })
             elif self.path == "/api/info":
                 self._json(200, {
                     "host": client.host, "control_enabled": control_enabled,
                     "read_only": not control_enabled, "simulated": simulated,
                     "limits": client.limit_table(),
+                    "authorization": roles.describe(client.user_id),
+                    "capabilities": self._capabilities(),
                 })
             else:
                 self.send_error(404)
@@ -685,14 +796,58 @@ def make_handler(
                 if self.path == "/api/login":
                     result = client.login(str(body.get("user_id", "")), str(body.get("password", "")))
                     snapshot_cache.invalidate()
+                    store.record_event(
+                        "session", "LOGIN", "success", user_id=result["user_id"],
+                        operator_ip=self.client_address[0], message="SCL-40 로그인",
+                    )
                     log.warning("SCL-40 login succeeded for user %s", result["user_id"])
                     self._json(200, {"ok": True, **result})
                     return
                 if self.path == "/api/logout":
+                    previous_user = client.user_id
                     result = client.logout()
                     snapshot_cache.invalidate()
+                    store.record_event(
+                        "session", "LOGOUT", "success", user_id=previous_user,
+                        operator_ip=self.client_address[0], message="SCL-40 로그아웃",
+                    )
                     log.warning("SCL-40 logout completed")
                     self._json(200, {"ok": True, **result})
+                    return
+
+                if self.path == "/api/verification/preview":
+                    if not self._role_allowed("control"):
+                        return
+                    params = body.get("params") or {}
+                    unit_id = str(body.get("unit_id") or "A").strip().upper()
+                    if not isinstance(params, dict):
+                        self._json(400, {"ok": False, "error": "params는 객체여야 합니다."})
+                        return
+                    result = client.preview_method_params(params, unit_id)
+                    store.record_event(
+                        "verification", "PREVIEW_METHOD", "success", user_id=client.user_id,
+                        operator_ip=self.client_address[0], unit_id=unit_id,
+                        message="전송하지 않고 Method 요청 검증", details={"request": result["request"]},
+                    )
+                    self._json(200, {"ok": True, **result, "sent": False})
+                    return
+
+                if self.path == "/api/alarms/ack":
+                    if not self._role_allowed("acknowledge_alarms"):
+                        return
+                    try:
+                        alarm_id = int(body.get("alarm_id") or 0)
+                    except (TypeError, ValueError):
+                        self._json(400, {"ok": False, "error": "alarm_id는 정수여야 합니다."})
+                        return
+                    if not store.acknowledge_alarm(alarm_id, client.user_id):
+                        self._json(404, {"ok": False, "error": "알람을 찾지 못했습니다."})
+                        return
+                    store.record_event(
+                        "alarm", "ACKNOWLEDGE", "success", user_id=client.user_id,
+                        operator_ip=self.client_address[0], message=f"알람 #{alarm_id} 확인",
+                    )
+                    self._json(200, {"ok": True, "alarm_id": alarm_id})
                     return
 
                 if self.path in ("/api/control/start", "/api/control/stop"):
@@ -717,6 +872,8 @@ def make_handler(
                     unit_id = str(body.get("unit_id") or "A").strip().upper()
                     if not isinstance(params, dict):
                         self._json(400, {"ok": False, "error": "params는 객체여야 합니다."})
+                        return
+                    if any(key in params for key in ("pmax", "pmin")) and not self._role_allowed("pressure_limits"):
                         return
                     result = broker.execute(
                         f"SET METHOD {unit_id}", self.client_address[0],
@@ -761,9 +918,45 @@ def make_handler(
                 log.error("request failed: %s", exc)
                 self._json(502, {"ok": False, "error": str(exc)})
 
+        def _capabilities(self) -> dict[str, Any]:
+            return {
+                "global_start_stop": {
+                    "confirmed": True,
+                    "scope": "all_connected_pumps",
+                    "endpoint": "/cgi-bin/Event.cgi",
+                },
+                "individual_start_stop": {
+                    "confirmed": False,
+                    "reason": "확인된 Event.cgi 요청에 UnitID가 없어 개별 START/STOP은 제공하지 않습니다.",
+                },
+                "per_pump_method": {
+                    "confirmed": True,
+                    "fields": ["flow", "pmax", "pmin"],
+                    "verification": "readback",
+                },
+                "per_module_purge": {
+                    "confirmed": False,
+                    "discovered_read_only": True,
+                    "evidence": "SCL web purge.js uses SelModuleNo/PurgeAct, but no purge write has been sent or validated.",
+                    "enabled": False,
+                },
+            }
+
+        def _role_allowed(self, capability: str) -> bool:
+            authorization = roles.describe(client.user_id)
+            if authorization.get(capability):
+                return True
+            self._json(403, {
+                "ok": False,
+                "error": f"현재 역할({authorization['role']})에는 {capability} 권한이 없습니다.",
+            })
+            return False
+
         def _control_allowed(self, body: dict[str, Any], token: str) -> bool:
             if not control_enabled:
                 self._json(403, {"ok": False, "error": "서버가 읽기 전용 모드입니다."})
+                return False
+            if not self._role_allowed("control"):
                 return False
             if body.get("confirmation") != token:
                 self._json(400, {"ok": False, "error": f"{token} 확인이 필요합니다."})
@@ -779,6 +972,8 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765, help="local dashboard port")
     parser.add_argument("--bind", default="127.0.0.1", help="dashboard listen address")
     parser.add_argument("--access-pin-file", type=Path, help="PIN file required for non-local API access")
+    parser.add_argument("--roles-file", type=Path, help="optional JSON mapping of SCL users to admin/operator/viewer")
+    parser.add_argument("--history-db", type=Path, default=APP_DIR / "scl40_history.sqlite3", help="SQLite history database")
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
     parser.add_argument("--enable-control", action="store_true", help="enable START/STOP endpoints")
     parser.add_argument(
@@ -818,6 +1013,20 @@ def main() -> int:
         if len(access_pin) < 6:
             parser.error("access PIN must contain at least 6 characters")
 
+    role_mapping: dict[str, str] = {}
+    if args.roles_file:
+        try:
+            loaded_roles = json.loads(args.roles_file.read_text(encoding="utf-8"))
+            if not isinstance(loaded_roles, dict):
+                raise ValueError("top-level value must be an object")
+            role_mapping = {str(key): str(value) for key, value in loaded_roles.items()}
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            parser.error(f"cannot read roles file: {exc}")
+    try:
+        roles = RolePolicy(role_mapping)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     log_path = APP_DIR / f"scl40_gui_{datetime.now():%Y%m%d_%H%M%S}.log"
     logging.basicConfig(
         level=logging.INFO,
@@ -840,15 +1049,25 @@ def main() -> int:
         log.warning("SIMULATOR MODE - no real instrument is connected")
 
     client = SCL40Client(target_host, pressure_ceiling=args.pressure_ceiling)
-    broker = CommandBroker()
-    recorder = TrendRecorder()
+    store = AuditStore(args.history_db)
+    health = CommunicationHealth(store)
+    broker = CommandBroker(store, lambda: client.user_id)
+    recorder = TrendRecorder(store)
     jetrun = JetRunController(
         client, broker.execute, log,
         poll_seconds=args.guard_interval, on_sample=recorder.record,
+        on_event=lambda event: store.record_event(
+            "run", str(event.get("kind") or "EVENT"), "info", user_id=client.user_id,
+            operator_ip=str(event.get("operator") or ""), message=str(event.get("message") or ""),
+            details=event,
+        ),
     )
     server = ThreadingHTTPServer(
         (args.bind, args.port),
-        make_handler(client, broker, jetrun, recorder, args.enable_control, log, access_pin, simulated=args.simulator),
+        make_handler(
+            client, broker, jetrun, recorder, store, health, roles,
+            args.enable_control, log, access_pin, simulated=args.simulator,
+        ),
     )
     url = f"http://127.0.0.1:{args.port}/"
     log.info("SCL-40 target: %s", target_host)
@@ -858,6 +1077,7 @@ def main() -> int:
     log.info("Mode: %s", "CONTROL" if args.enable_control else "READ ONLY")
     log.info("Pressure write ceiling: %s MPa", args.pressure_ceiling)
     log.info("LCP jet run controller: idle, %.1f s interval", args.guard_interval)
+    log.info("Persistent history: %s", args.history_db)
     log.info("Log: %s", log_path)
     if not args.no_browser:
         threading.Timer(0.7, lambda: webbrowser.open(url)).start()
@@ -879,6 +1099,7 @@ def main() -> int:
         if sim_server is not None:
             sim_server.shutdown()
             sim_server.server_close()
+        store.close()
     return 0
 
 

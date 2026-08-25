@@ -29,6 +29,14 @@ when the pressure jumps, and stop the pump when it jumps again.
 - System-wide Pump START/STOP (`Event.cgi` contains no confirmed UnitID)
 - Set the selected pump flow in the range `0.0000` to `5.0000 mL/min`
 - Verify a flow write by immediately reading Method 0 back
+- Persist pressure, flow, pump state, commands and alarms in SQLite across page/server restarts
+- Export telemetry, audit events and alarms as UTF-8 CSV from the dashboard
+- Show communication latency, last response, consecutive failures and active alarms
+- Acknowledge alarms while retaining the original alarm record
+- Tamper-evident audit-event hash chain with SCL user ID and operator IP
+- Dashboard roles: `Admin` is administrator, other SCL users are operators,
+  and a logged-out session is view-only. An optional JSON role map can override this.
+- Build and inspect an exact per-pump Method request without transmitting it
 - Fixed pressure trend chart showing Pump A and Pump B together, with 5, 15 and
   60 minute windows and server-side per-pump history.
 - Compact model-specific instrument drawings distinguish LC-40i and LC-20Ai
@@ -49,6 +57,22 @@ when the pressure jumps, and stop the pump when it jumps again.
 
 The GUI uses only the Python standard library. The supplied launcher looks for
 the bundled Codex Python first, then `py -3`, then `python`.
+
+History is stored in `scl40_history.sqlite3` beside the program. The file and
+its WAL companions are ignored by Git. Use the three CSV buttons under
+`AUDIT & EXPORT` to make portable copies. The restart-recovery behavior of an
+interrupted automatic run is intentionally not implemented.
+
+To override account roles, create a private JSON file such as:
+
+```json
+{"Admin": "admin", "Operator1": "operator", "Guest": "viewer"}
+```
+
+Then add `--roles-file .\scl40_roles.json` to the launcher command. The role
+does not replace the SCL login; it limits what this dashboard exposes after
+that login. Only `admin` may change Pmax/Pmin. `admin` and `operator` may set
+flow, issue system START/STOP and acknowledge alarms.
 
 ## LCP jet run
 
@@ -170,9 +194,10 @@ shown; Unit B uses `B` and the precision returned by its Method response):
 Write the pressure limits. Element names and their position come from the
 instrument's own Method read response; `Flow` and the device-reported `Tflow`
 are always resent because that pairing is the confirmed request shape. `Tflow`
-is not exposed as a user-writable dashboard parameter. **Not yet executed against
-the real instrument** - check the exact request in the log before the first
-write:
+is not exposed as a user-writable dashboard parameter. Pmax writes to both
+physical Unit A and Unit B have completed with Method readback confirmation.
+Pmin uses the same observed Method structure and still requires a deliberate
+first physical verification:
 
 ```xml
 <Method><No>0</No><Pumps><Pump><UnitID>A</UnitID><Usual><Flow>0.0460</Flow><Tflow>1.0000</Tflow><Pmax>8.0</Pmax></Usual><Detail><Pmin>0.0</Pmin></Detail></Pump></Pumps></Method>
@@ -194,8 +219,9 @@ Logout:
 - Config, Method and Monitor have confirmed independent Unit A/B entries.
 - The confirmed Event START/STOP XML has no UnitID. The GUI therefore labels
   these actions `START ALL` / `STOP ALL` and treats them as system-wide.
-- Unit B Method writes have passed simulator tests only. They have not yet been
-  sent to the physical SCL-40.
+- Unit B flow writes have completed on the physical SCL-40 with Method readback.
+- Physical Pmax writes have completed for both Unit A and Unit B with readback.
+- Pmin has not yet been physically exercised.
 - The physical pump response still requires verification. The SCL monitor has
   reported Pump A `OpState=1`, flow `0.0460`, pressure `0.0 MPa`, and system
   state `401`, but the user reported no visible physical pump motion.
@@ -206,7 +232,13 @@ Logout:
   clients should coordinate who is operating the instrument.
 - A successful HTTP/XML echo is not sufficient proof of physical execution;
   use Monitor readback and physical observation.
-- Pressure-limit writes are not implemented.
+- The controller web assets contain a per-module purge UI using `SelModuleNo`
+  and `PurgeAct`. This is discovery evidence only: its endpoint/request lifecycle
+  has not been safely validated, so purge controls are deliberately not exposed.
+- No separate per-pump START/STOP request was found. The only confirmed request
+  remains the system-wide `PumpBT` event.
+- SQLite/audit logging improves traceability but is not a validated replacement
+  for LabSolutions regulatory data integrity, method versioning or electronic signatures.
 
 See `CLAUDE_CODE_HANDOFF.md` for implementation details and next work.
 

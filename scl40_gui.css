@@ -651,6 +651,26 @@ table.data.param th { width: auto; }
 .panel-row.split { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .panel-row.info-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .panel-row.info-row > .panel { min-width: 0; }
+.panel-row.system-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.health-chip {
+  padding: 3px 8px; border: 1px solid var(--rule); border-radius: 10px;
+  font: 700 10px var(--mono); letter-spacing: .08em;
+}
+.health-chip[data-state="online"] { color: var(--run); border-color: #b6d3c3; background: var(--run-soft); }
+.health-chip[data-state="stale"] { color: var(--warn); border-color: #ddc793; background: var(--warn-soft); }
+.health-chip[data-state="offline"] { color: var(--halt); border-color: #d8b7b5; background: var(--halt-soft); }
+.alarm-list, .audit-list { max-height: 132px; overflow: auto; border-top: 1px solid var(--rule-soft); }
+.alarm-row, .audit-row { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 11px; font-size: 11px; border-bottom: 1px solid var(--rule-soft); }
+.alarm-row strong { color: var(--halt); font-family: var(--mono); }
+.alarm-row.acknowledged strong { color: var(--ink-3); }
+.audit-row { grid-template-columns: 72px 110px minmax(0, 1fr); font-family: var(--mono); }
+.empty-note { margin: 0; padding: 12px; color: var(--ink-3); font-size: 11px; }
+.record-summary, .export-actions { display: flex; gap: 8px; align-items: center; padding: 9px 11px; }
+.record-summary span { flex: 1; color: var(--ink-3); font-size: 10px; text-transform: uppercase; }
+.record-summary b { display: block; color: var(--ink); font: 700 18px var(--mono); }
+.export-actions { padding-top: 0; flex-wrap: wrap; }
+.export-actions .btn { min-width: 112px; flex: 1; }
 
 .log-panel { display: flex; flex-direction: column; }
 
@@ -933,6 +953,7 @@ table.data td.u {
   .titlebar-status { flex-wrap: wrap; gap: 10px; }
   .panel-row { grid-template-columns: 1fr; }
   .panel-row.info-row { grid-template-columns: 1fr; }
+  .panel-row.system-row { grid-template-columns: 1fr; }
   .overview-row .pump-deck { grid-template-columns: 1fr; }
   .cmd-group.run-group { margin-left: 0; }
   .cmd-group { flex-wrap: wrap; }
