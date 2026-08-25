@@ -3,7 +3,6 @@
 const $ = (id) => document.getElementById(id);
 
 const HISTORY_LIMIT = 2000;
-const DASH_NUM = "–.––––";
 
 const RUN_DEFAULTS = {
   mode: "lcp_jet",
@@ -310,49 +309,6 @@ async function fetchTrend() {
     if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
     state.historyByUnit[unitId] = history;
   }));
-}
-
-/* ---------- sudden-change indicators ---------- */
-
-// A jump of this much within the look-back window blinks the readout.
-const ALERT = {
-  windowMs: 6000,
-  flashMs: 2500,
-  pressureRise: 0.2,   // MPa
-  flowRise: 0.005,     // mL/min
-};
-
-const flashTimers = {};
-
-function flashReadout(channel) {
-  if (flashTimers[channel]) return;
-  const node = document.querySelector(`.readout[data-channel="${channel}"]`);
-  if (!node) return;
-  node.classList.add("alert-flash");
-  flashTimers[channel] = setTimeout(() => {
-    node.classList.remove("alert-flash");
-    flashTimers[channel] = null;
-  }, ALERT.flashMs);
-}
-
-function checkSuddenRise() {
-  const now = Date.now();
-  const selectedHistory = state.historyByUnit[state.selectedUnit] || [];
-  const recent = selectedHistory.filter((point) => point.t >= now - ALERT.windowMs);
-  if (recent.length < 2) return;
-
-  const rise = (pick) => {
-    const values = recent.map(pick).filter((v) => v !== null && v !== undefined);
-    return values.length < 2 ? null : values[values.length - 1] - Math.min(...values);
-  };
-
-  const pressureRise = rise((point) => point.p);
-  if (pressureRise !== null && pressureRise >= ALERT.pressureRise) flashReadout("pressure");
-
-  const flowRise = rise((point) => point.f);
-  const targets = recent.map((point) => point.target).filter((v) => v !== null && v !== undefined);
-  const targetChanged = targets.length > 1 && Math.abs(targets[targets.length - 1] - targets[0]) > 1e-6;
-  if ((flowRise !== null && flowRise >= ALERT.flowRise) || targetChanged) flashReadout("flow");
 }
 
 /* ---------- method parameter editor ---------- */
@@ -667,21 +623,7 @@ function render(data, { chart = true } = {}) {
   const pumpB = state.pumps.find((item) => item.unit_id === "B");
   setText("legendPumpA", pumpA ? `PUMP A · ${pumpA.model}` : "PUMP A");
   setText("legendPumpB", pumpB ? `PUMP B · ${pumpB.model}` : "PUMP B");
-  setText("pressureLabel", `PUMP ${state.selectedUnit} PRESSURE`);
-  setText("flowLabel", `PUMP ${state.selectedUnit} FLOW`);
   setText("pumpStateLabel", `PUMP ${state.selectedUnit}`);
-
-  const monitorLive = monitor.available !== false;
-  const pressure = num(monitor.pressure, 2);
-  const flow = num(monitor.flow, 4);
-
-  setText("pressure", pressure, "–.––");
-  setText("flow", flow, DASH_NUM);
-  setText("pressureNote", method.pmax ? `limit ${num(method.pmax, 1)} MPa` : "limit —");
-  setText("flowNote", monitorLive ? "monitor value" : "no monitor session");
-
-  document.querySelector('.readout[data-channel="pressure"]').classList.toggle("stale", pressure === null);
-  document.querySelector('.readout[data-channel="flow"]').classList.toggle("stale", flow === null);
 
   const pumpRunning = monitor.pump_on;
   const pumpNode = $("pumpState");
@@ -758,7 +700,6 @@ function render(data, { chart = true } = {}) {
   setText("railHost", data.host);
   setText("railPoll", `${(state.pollMs / 1000).toFixed(0)} s`);
   setText("railSamples", state.pumps.map((item) => `${item.unit_id}:${(state.historyByUnit[item.unit_id] || []).length}`).join(" · "), "0");
-  checkSuddenRise();
   if (chart) scheduleChartRender();
 
   const flowMax = Number(state.limits.flow?.max ?? 5);
@@ -771,7 +712,6 @@ function renderOffline(message) {
   $("linkState").dataset.state = "offline";
   $("linkState").querySelector("b").textContent = "OFFLINE";
   setText("latency", "—");
-  document.querySelectorAll(".readout").forEach((node) => node.classList.add("stale"));
   setStatusMessage(message, true);
 }
 
