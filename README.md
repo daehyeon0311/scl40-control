@@ -63,7 +63,7 @@ a collapsible advanced section.
 | Monitoring | Read per-unit model, flow, pressure, operation state, errors, and latency |
 | Control | Set flow by UnitID with immediate Method 0 readback verification |
 | System events | Confirmed system-wide `START ALL` and `STOP ALL` commands |
-| Automation | Pressure-triggered LCP fill/run/stop workflow and timed operation |
+| Automation | Pressure-triggered LCP fill/run/stop workflow, timed operation, and live stage transitions |
 | Multi-client | Several browsers share one serialized SCL control session |
 | Safety | Pressure ceiling, stage timeouts, watchdog, command confirmation, and alarms |
 | Records | SQLite telemetry, alarm history, CSV export, and tamper-evident audit chain |

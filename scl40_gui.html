@@ -70,8 +70,18 @@
           <section class="panel run-panel" id="runPanel" data-active="false">
             <div class="panel-head">
               <h2>자동 운전</h2>
-              <span class="stage-chip" id="runStageChip" data-stage="idle">대기</span>
+              <span class="stage-chip" id="runStageChip" data-stage="idle" role="status" aria-live="polite">대기</span>
               <span class="head-note" id="runDetail">시작 전</span>
+            </div>
+
+            <div class="run-progress" id="runProgress" data-stage="idle" aria-label="자동 운전 진행 단계">
+              <span class="run-progress-label">진행 단계</span>
+              <div class="run-steps">
+                <div class="run-step" id="runStepFill"><i>1</i><span id="runStepFillLabel">물 채우기</span></div>
+                <div class="run-step" id="runStepRun"><i>2</i><span id="runStepRunLabel">실험 운전</span></div>
+                <div class="run-step" id="runStepDone"><i>3</i><span id="runStepDoneLabel">자동 정지</span></div>
+              </div>
+              <span class="run-transition-notice" id="runTransitionNotice" hidden aria-live="assertive"></span>
             </div>
 
             <div class="run-body">

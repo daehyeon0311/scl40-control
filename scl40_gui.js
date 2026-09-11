@@ -63,12 +63,15 @@ const state = {
   selectedUnit: localStorage.getItem("scl40SelectedPump") || "A",
   lastData: null,
   run: { stage: "idle", active: false },
+  lastRunStage: null,
+  lastActiveRunStep: 0,
   seenRunEvents: new Set(),
   authorization: { role: "viewer", control: false, pressure_limits: false, acknowledge_alarms: false },
   chartMeta: null,
 };
 
 let actionDialogResolve = null;
+let runTransitionTimer = null;
 
 /* ---------- helpers ---------- */
 
@@ -509,6 +512,56 @@ function updateRunMode() {
   if (!state.run.active) setText("runThreshold", null);
 }
 
+function renderRunProgress(run, stage) {
+  const mode = run.mode || run.config?.mode || $("runMode").value || "lcp_jet";
+  const labels = mode === "timed"
+    ? ["펌프 시작", "시간 운전", "자동 정지"]
+    : mode === "watch"
+    ? ["감시 시작", "압력 감시", "자동 정지"]
+    : ["물 채우기", "실험 운전", "자동 정지"];
+  setText("runStepFillLabel", labels[0]);
+  setText("runStepRunLabel", labels[1]);
+  setText("runStepDoneLabel", labels[2]);
+
+  const steps = [$("runStepFill"), $("runStepRun"), $("runStepDone")];
+  let current = -1;
+  if (stage === "fill") current = 0;
+  else if (stage === "run") current = 1;
+  else if (stage === "finished") current = 2;
+  else if (stage === "aborted" || stage === "error") current = state.lastActiveRunStep;
+  if (stage === "fill" || stage === "run") state.lastActiveRunStep = current;
+
+  for (const [index, step] of steps.entries()) {
+    const complete = stage === "finished" ? index < 2 : current > index;
+    step.classList.toggle("is-current", index === current);
+    step.classList.toggle("is-complete", complete);
+    step.classList.toggle("is-failed", (stage === "aborted" || stage === "error") && index === current);
+    step.setAttribute("aria-current", index === current ? "step" : "false");
+  }
+  $("runProgress").dataset.stage = stage;
+
+  const changed = state.lastRunStage !== null && state.lastRunStage !== stage;
+  if (changed) {
+    const panel = $("runPanel");
+    const progress = $("runProgress");
+    const header = $("runHeaderStatus");
+    const notice = $("runTransitionNotice");
+    notice.textContent = `단계 전환 · ${run.stage_label || stage}`;
+    notice.hidden = false;
+    for (const node of [panel, progress, header]) {
+      node.classList.remove("stage-transition");
+      void node.offsetWidth;
+      node.classList.add("stage-transition");
+    }
+    clearTimeout(runTransitionTimer);
+    runTransitionTimer = setTimeout(() => {
+      notice.hidden = true;
+      for (const node of [panel, progress, header]) node.classList.remove("stage-transition");
+    }, 2800);
+  }
+  state.lastRunStage = stage;
+}
+
 function renderRun(run, monitorPressure) {
   state.run = run;
   const stage = run.stage || "idle";
@@ -520,6 +573,8 @@ function renderRun(run, monitorPressure) {
   setText("runHeaderText", run.stage_label, "대기");
   $("runStageChip").dataset.stage = stage;
   $("runStageChip").textContent = run.stage_label || "대기";
+  $("runPanel").dataset.stage = stage;
+  renderRunProgress(run, stage);
   setText("runDetail", run.detail, "시작 전");
   setText("statusRun", `RUN ${stage}`);
 
