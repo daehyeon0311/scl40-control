@@ -66,6 +66,7 @@ FIELD_LIMITS: dict[str, dict[str, Any]] = {
 SETTLE_MIN, SETTLE_MAX = 0.0, 300.0
 TIMEOUT_MAX = 24 * 3600.0
 DURATION_MIN, DURATION_MAX = 1.0, 24 * 3600.0
+PUMP_START_CONFIRM_SECONDS = 3.0
 
 
 class RunError(RuntimeError):
@@ -128,6 +129,7 @@ class JetRunController:
         self._detail = "런이 실행 중이 아닙니다."
         self._pressure: float | None = None
         self._peak: float | None = None
+        self._pump_on_confirmed = False
         self._operator = ""
         self._events: list[dict[str, Any]] = []
         self._last_run: dict[str, Any] | None = None
@@ -261,6 +263,11 @@ class JetRunController:
         with self._lock:
             self.stage = stage
             self._stage_started = time.monotonic()
+            if stage == STAGE_FILL or self.config.get("mode") == "timed":
+                self._pump_on_confirmed = False
+            elif self.config.get("mode") == "watch":
+                # Watch mode does not issue START; the pump must already be on.
+                self._pump_on_confirmed = True
             self._watching = stage == STAGE_FILL
             self._peak = None
             threshold = self._threshold(stage)
@@ -377,9 +384,24 @@ class JetRunController:
             elapsed = time.monotonic() - self._stage_started
             self._pressure = pressure
             self._peak = pressure if self._peak is None else max(self._peak, pressure)
-            pump_off = monitor.get("pump_on") is False
+            pump_state = monitor.get("pump_on")
+            if pump_state is True:
+                self._pump_on_confirmed = True
+            pump_on_confirmed = self._pump_on_confirmed
 
-        if pump_off:
+        if pump_state is False and not pump_on_confirmed:
+            if elapsed < PUMP_START_CONFIRM_SECONDS:
+                with self._lock:
+                    self._detail = (
+                        f"펌프 시작 확인 중 · {PUMP_START_CONFIRM_SECONDS - elapsed:.1f}초 남음 "
+                        f"(현재 {pressure:.2f} MPa)"
+                    )
+                return
+            self._record("pump_start_unconfirmed", "펌프 시작 상태를 확인하지 못했습니다 — 안전 정지")
+            self._stop_now(STAGE_ERROR, "펌프 시작 상태 확인 실패")
+            return
+
+        if pump_state is False:
             self._record("pump_off", "펌프가 외부에서 정지되었습니다 — 런 종료")
             self._finish(STAGE_ABORTED, "펌프가 외부에서 정지됨")
             return

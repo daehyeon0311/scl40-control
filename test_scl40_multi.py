@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from scl40_gui import RolePolicy, SCL40Client, SCL40Error, SnapshotCache, TrendRecorder
-from scl40_jetrun import JetRunController, STAGE_FINISHED, STAGE_RUN
+from scl40_jetrun import JetRunController, STAGE_ERROR, STAGE_FILL, STAGE_FINISHED, STAGE_RUN
 from scl40_sim import start_simulator
 from scl40_store import AuditStore, CommunicationHealth
 
@@ -180,6 +180,104 @@ class MultiPumpTests(unittest.TestCase):
             self.assertFalse(client.pump_on)
             self.assertEqual(client.commands[-1], ("pump", False))
             self.assertTrue(any(event["kind"] == "duration_complete" for event in state["events"]))
+        finally:
+            controller.shutdown()
+
+    def test_run_waits_for_delayed_pump_on_confirmation(self) -> None:
+        class DelayedMonitorClient:
+            session_id = "test-session"
+
+            def __init__(self) -> None:
+                self.commands = []
+                self.monitor_on = False
+
+            @staticmethod
+            def get_config():
+                return {"pumps": [{"unit_id": "A", "model": "LC-40i"}]}
+
+            def set_method_params(self, params):
+                self.commands.append(("flow", str(params["flow"])))
+                return {}
+
+            def send_pump(self, start):
+                self.commands.append(("pump", bool(start)))
+                return {}
+
+            def get_monitor(self):
+                return {
+                    "available": True, "pressure": "0.20", "flow": "0.3000",
+                    "pump_on": self.monitor_on,
+                }
+
+        client = DelayedMonitorClient()
+        controller = JetRunController(
+            client,
+            lambda _action, _operator, operation: operation(),
+            log=type("Log", (), {"warning": lambda *args: None, "error": lambda *args: None})(),
+            poll_seconds=3600,
+        )
+        try:
+            controller.start({
+                "mode": "lcp_jet", "fill_flow": "0.3000", "fill_pressure": "2.0",
+                "run_flow": "0.1000", "run_pressure": "3.0", "pressure_limit": "9.0",
+                "settle_seconds": "0.5", "stage_timeout": "60",
+            }, "tester")
+
+            controller._tick()
+            state = controller.state()
+            self.assertEqual(state["stage"], STAGE_FILL)
+            self.assertIn("펌프 시작 확인 중", state["detail"])
+            self.assertNotIn(("pump", False), client.commands)
+
+            client.monitor_on = True
+            controller._tick()
+            self.assertEqual(controller.state()["stage"], STAGE_FILL)
+
+            client.monitor_on = False
+            controller._tick()
+            self.assertNotEqual(controller.state()["stage"], STAGE_FILL)
+        finally:
+            controller.shutdown()
+
+    def test_unconfirmed_start_fails_safe_after_grace_period(self) -> None:
+        class NeverOnClient:
+            session_id = "test-session"
+
+            def __init__(self) -> None:
+                self.commands = []
+
+            @staticmethod
+            def get_config():
+                return {"pumps": [{"unit_id": "A", "model": "LC-40i"}]}
+
+            def set_method_params(self, _params):
+                return {}
+
+            def send_pump(self, start):
+                self.commands.append(bool(start))
+                return {}
+
+            @staticmethod
+            def get_monitor():
+                return {"available": True, "pressure": "0.10", "flow": "0.0000", "pump_on": False}
+
+        client = NeverOnClient()
+        controller = JetRunController(
+            client,
+            lambda _action, _operator, operation: operation(),
+            log=type("Log", (), {"warning": lambda *args: None, "error": lambda *args: None})(),
+            poll_seconds=3600,
+        )
+        try:
+            controller.start({
+                "mode": "lcp_jet", "fill_flow": "0.3000", "fill_pressure": "2.0",
+                "run_flow": "0.1000", "run_pressure": "3.0", "pressure_limit": "9.0",
+                "settle_seconds": "0.5", "stage_timeout": "60",
+            }, "tester")
+            controller._stage_started = time.monotonic() - 4
+            controller._tick()
+            self.assertEqual(controller.state()["stage"], STAGE_ERROR)
+            self.assertEqual(client.commands, [True, False])
         finally:
             controller.shutdown()
 
