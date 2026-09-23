@@ -34,10 +34,10 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable
-
+from typing import Any
 
 STAGE_IDLE = "idle"
 STAGE_FILL = "fill"
@@ -161,9 +161,18 @@ class JetRunController:
             "run_flow": parse_decimal(body.get("run_flow"), "run_flow"),
             "run_pressure": parse_decimal(body.get("run_pressure"), "run_pressure") if mode != "timed" else None,
             "pressure_limit": parse_decimal(body.get("pressure_limit"), "pressure_limit", required=False),
-            "settle_seconds": parse_seconds(body.get("settle_seconds"), "안정화 시간", SETTLE_MIN, SETTLE_MAX, 15.0) if mode != "timed" else 0.0,
-            "stage_timeout": parse_seconds(body.get("stage_timeout"), "단계 제한 시간", 0.0, TIMEOUT_MAX, 1800.0) if mode != "timed" else 0.0,
-            "duration_seconds": parse_seconds(body.get("duration_seconds"), "운전 시간", DURATION_MIN, DURATION_MAX, 60.0) if mode == "timed" else None,
+            "settle_seconds": (
+                parse_seconds(body.get("settle_seconds"), "안정화 시간", SETTLE_MIN, SETTLE_MAX, 15.0)
+                if mode != "timed" else 0.0
+            ),
+            "stage_timeout": (
+                parse_seconds(body.get("stage_timeout"), "단계 제한 시간", 0.0, TIMEOUT_MAX, 1800.0)
+                if mode != "timed" else 0.0
+            ),
+            "duration_seconds": (
+                parse_seconds(body.get("duration_seconds"), "운전 시간", DURATION_MIN, DURATION_MAX, 60.0)
+                if mode == "timed" else None
+            ),
             "fill_flow": None,
             "fill_pressure": None,
         }
@@ -305,7 +314,7 @@ class JetRunController:
         if self._on_event:
             try:
                 self._on_event(dict(entry))
-            except Exception as exc:  # audit failure must not stop the safety loop
+            except Exception as exc:  # noqa: BLE001 - audit failure must not stop the safety loop
                 self._log.error("run audit callback failed: %s", exc)
         self._log.warning("LCP jet run: %s", message)
 

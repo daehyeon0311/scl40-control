@@ -5,13 +5,13 @@ These tests only use ``scl40_sim``. They never contact the real instrument.
 
 from __future__ import annotations
 
-import unittest
 import time
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from scl40_gui import RolePolicy, SCL40Client, SCL40Error, SnapshotCache, TrendRecorder
-from scl40_jetrun import JetRunController, STAGE_ERROR, STAGE_FILL, STAGE_FINISHED, STAGE_RUN
+from scl40_jetrun import STAGE_ERROR, STAGE_FILL, STAGE_FINISHED, STAGE_RUN, JetRunController
 from scl40_sim import start_simulator
 from scl40_store import AuditStore, CommunicationHealth
 

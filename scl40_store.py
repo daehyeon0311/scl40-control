@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import hashlib
 import io
@@ -134,9 +135,10 @@ class AuditStore:
                 "SELECT entry_hash FROM audit_events ORDER BY id DESC LIMIT 1"
             ).fetchone()
             previous_hash = row[0] if row else ""
-            canonical = "|".join(
-                (timestamp, category, action, result, user_id, operator_ip, unit_id, message, details_json, previous_hash)
-            )
+            canonical = "|".join((
+                timestamp, category, action, result, user_id,
+                operator_ip, unit_id, message, details_json, previous_hash,
+            ))
             entry_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
             cur = self._db.execute(
                 """INSERT INTO audit_events
@@ -266,12 +268,18 @@ class AuditStore:
             "events": (
                 """SELECT timestamp,category,action,result,user_id,operator_ip,unit_id,message,details_json,entry_hash
                    FROM audit_events ORDER BY id""",
-                ("timestamp", "category", "action", "result", "user_id", "operator_ip", "unit_id", "message", "details_json", "entry_hash"),
+                (
+                    "timestamp", "category", "action", "result", "user_id",
+                    "operator_ip", "unit_id", "message", "details_json", "entry_hash",
+                ),
             ),
             "alarms": (
                 """SELECT first_seen,last_seen,code,unit_id,severity,message,raw,active,acknowledged,
                           acknowledged_by,acknowledged_at FROM alarms ORDER BY id""",
-                ("first_seen", "last_seen", "code", "unit_id", "severity", "message", "raw", "active", "acknowledged", "acknowledged_by", "acknowledged_at"),
+                (
+                    "first_seen", "last_seen", "code", "unit_id", "severity", "message",
+                    "raw", "active", "acknowledged", "acknowledged_by", "acknowledged_at",
+                ),
             ),
         }
         if kind not in tables:
@@ -308,10 +316,8 @@ class CommunicationHealth:
             self.last_success = iso_now()
             self.last_error = ""
             self.consecutive_failures = 0
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 self.last_latency_ms = int(latency_ms)
-            except (TypeError, ValueError):
-                pass
         if recovered:
             self.store.resolve_alarm("COMMUNICATION")
             self.store.record_event("communication", "RECOVERED", "success", message="SCL-40 통신 복구")

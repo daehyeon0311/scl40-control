@@ -4,12 +4,10 @@
 from __future__ import annotations
 
 import argparse
-from decimal import Decimal, InvalidOperation
 import json
 import logging
 import os
 import secrets
-import socket
 import sys
 import threading
 import time
@@ -19,6 +17,7 @@ import webbrowser
 import xml.etree.ElementTree as ET
 from collections import deque
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -26,7 +25,6 @@ from urllib.parse import parse_qs, urlparse
 
 from scl40_jetrun import JetRunController, RunError
 from scl40_store import AuditStore, CommunicationHealth
-
 
 SOURCE_DIR = Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", SOURCE_DIR))
@@ -155,7 +153,7 @@ class SCL40Client:
                 raw = response.read().decode("utf-8", errors="replace")
                 if response.status != 200:
                     raise SCL40Error(f"{endpoint}: HTTP {response.status}")
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        except (urllib.error.URLError, TimeoutError) as exc:
             raise SCL40Error(f"{endpoint} 연결 실패: {exc}") from exc
         try:
             return ET.fromstring(raw), raw
@@ -271,7 +269,8 @@ class SCL40Client:
                 "12": "LC 워크스테이션 연결 중",
                 "13": "SCL-40 터치스크린에 사용자가 로그인되어 있음 — 터치스크린에서 먼저 로그아웃하세요",
             }
-            raise SCL40Error(f"SCL-40 로그인 실패 ({result or 'unknown'}): {messages.get(result, '장비 응답 확인 필요')}")
+            detail = messages.get(result, "장비 응답 확인 필요")
+            raise SCL40Error(f"SCL-40 로그인 실패 ({result or 'unknown'}): {detail}")
         self.session_id = session_id
         self.user_id = user_id
         return {"logged_in": True, "user_id": user_id}
@@ -352,7 +351,10 @@ class SCL40Client:
         pumps = []
         for pump_config in config.get("pumps", []):
             unit_id = pump_config["unit_id"]
-            method = method_map.get(unit_id, {"unit_id": unit_id, "number": methods.get("number"), "alias": methods.get("alias")})
+            method = method_map.get(
+                unit_id,
+                {"unit_id": unit_id, "number": methods.get("number"), "alias": methods.get("alias")},
+            )
             monitor = monitor_map.get(unit_id, {
                 "unit_id": unit_id, "available": False,
                 "reason": monitors.get("reason", "Monitor 응답에 펌프가 없습니다."),
@@ -365,7 +367,8 @@ class SCL40Client:
                 "system_state_code": monitors.get("system_state_code"),
             }
             pumps.append({**pump_config, "method": method, "monitor": monitor})
-        primary = pumps[0] if pumps else {"method": {}, "monitor": {"available": False, "reason": "연결된 펌프가 없습니다."}}
+        no_pump = {"method": {}, "monitor": {"available": False, "reason": "연결된 펌프가 없습니다."}}
+        primary = pumps[0] if pumps else no_pump
         return {
             "ok": True,
             "host": self.host,
@@ -427,7 +430,9 @@ class SCL40Client:
         decimals = {}
         for key in ("flow", "tflow"):
             current_value = str(current.get(key) or "")
-            decimals[key] = len(current_value.rsplit(".", 1)[1]) if "." in current_value else self.limits[key]["decimals"]
+            decimals[key] = (
+                len(current_value.rsplit(".", 1)[1]) if "." in current_value else self.limits[key]["decimals"]
+            )
         values = {key: self._validate(key, raw, decimals.get(key)) for key, raw in updates.items()}
         for key in ALWAYS_SENT:
             if key not in values:
@@ -472,7 +477,9 @@ class SCL40Client:
         for key, sent in values.items():
             try:
                 if Decimal(readback.get(key) or "nan") != Decimal(sent):
-                    mismatched.append(f"{self.limits[key]['label']} 요청 {sent} / 장비 {readback.get(key) or 'unknown'}")
+                    mismatched.append(
+                        f"{self.limits[key]['label']} 요청 {sent} / 장비 {readback.get(key) or 'unknown'}"
+                    )
             except InvalidOperation:
                 mismatched.append(f"{self.limits[key]['label']} 재조회 값 없음")
         if mismatched:
@@ -707,10 +714,14 @@ def make_handler(
         def _require_api_access(self) -> bool:
             if self._api_authorized():
                 return True
-            self._json(401, {"ok": False, "error": "다른 PC에서 접속하려면 대시보드 PIN이 필요합니다.", "pin_required": True})
+            self._json(401, {
+                "ok": False,
+                "error": "다른 PC에서 접속하려면 대시보드 PIN이 필요합니다.",
+                "pin_required": True,
+            })
             return False
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             if self.path.startswith("/api/") and not self._require_api_access():
                 return
             if self.path == "/":
@@ -738,7 +749,8 @@ def make_handler(
                 except ValueError as exc:
                     self._json(400, {"ok": False, "error": str(exc)})
                     return
-                self._bytes(200, data, "text/csv; charset=utf-8", f"scl40_{kind}_{datetime.now():%Y%m%d_%H%M%S}.csv")
+                filename = f"scl40_{kind}_{datetime.now().astimezone():%Y%m%d_%H%M%S}.csv"
+                self._bytes(200, data, "text/csv; charset=utf-8", filename)
             elif self.path.split("?", 1)[0] == "/api/records":
                 query = parse_qs(urlparse(self.path).query)
                 try:
@@ -808,7 +820,7 @@ def make_handler(
             else:
                 self.send_error(404)
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             try:
                 if self.path.startswith("/api/") and not self._require_api_access():
                     return
@@ -904,7 +916,10 @@ def make_handler(
                         f"{item['label']} {item['previous']} -> {item['value']} {item['unit']}"
                         for item in result["applied"].values() if item["changed"]
                     )
-                    log.warning("method write for Unit %s from %s: %s", unit_id, self.client_address[0], changes or "no change")
+                    log.warning(
+                        "method write for Unit %s from %s: %s",
+                        unit_id, self.client_address[0], changes or "no change",
+                    )
                     log.info("method write request: %s", result["request"])
                     self._json(200, {"ok": True, **result})
                     return
@@ -957,7 +972,10 @@ def make_handler(
                 "per_module_purge": {
                     "confirmed": False,
                     "discovered_read_only": True,
-                    "evidence": "SCL web purge.js uses SelModuleNo/PurgeAct, but no purge write has been sent or validated.",
+                    "evidence": (
+                        "SCL web purge.js uses SelModuleNo/PurgeAct, "
+                        "but no purge write has been sent or validated."
+                    ),
                     "enabled": False,
                 },
             }
@@ -991,9 +1009,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("host", nargs="?", default="192.168.200.99", help="SCL-40 IP address")
     parser.add_argument("--port", type=int, default=8765, help="local dashboard port")
     parser.add_argument("--bind", default="127.0.0.1", help="dashboard listen address")
-    parser.add_argument("--access-pin-file", type=Path, help="optional PIN file for an extra non-local API access check")
+    parser.add_argument(
+        "--access-pin-file", type=Path,
+        help="optional PIN file for an extra non-local API access check",
+    )
     parser.add_argument("--roles-file", type=Path, help="optional JSON mapping of SCL users to admin/operator/viewer")
-    parser.add_argument("--history-db", type=Path, default=DATA_DIR / "scl40_history.sqlite3", help="SQLite history database")
+    parser.add_argument(
+        "--history-db", type=Path, default=DATA_DIR / "scl40_history.sqlite3",
+        help="SQLite history database",
+    )
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
     parser.add_argument("--enable-control", action="store_true", help="enable START/STOP endpoints")
     parser.add_argument(
@@ -1048,7 +1072,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = DATA_DIR / f"scl40_gui_{datetime.now():%Y%m%d_%H%M%S}.log"
+    log_path = DATA_DIR / f"scl40_gui_{datetime.now().astimezone():%Y%m%d_%H%M%S}.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",

@@ -14,8 +14,8 @@ import datetime as dt
 import socket
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 try:
     import requests
@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - provides a clear Windows setup hint
         "Install it with: python -m pip install requests",
         file=sys.stderr,
     )
-    raise SystemExit(2)
+    raise SystemExit(2) from None
 
 
 SAFE_PATHS = (
@@ -65,7 +65,7 @@ class ProbeLogger:
     def close(self) -> None:
         self._file.close()
 
-    def __enter__(self) -> "ProbeLogger":
+    def __enter__(self) -> ProbeLogger:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -219,7 +219,7 @@ def main() -> int:
         return 2
 
     args.log_dir.mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = dt.datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
     safe_ip = args.ip.replace(".", "-")
     log_path = args.log_dir / f"scl40_probe_{safe_ip}_{stamp}.txt"
 

@@ -13,7 +13,6 @@ from pathlib import Path
 
 from scl40_gui import main as run_dashboard
 
-
 APP_NAME = "SCL40-Control"
 DEFAULTS = {
     "scl40_host": "192.168.200.99",
@@ -142,7 +141,7 @@ def show_error(message: str) -> None:
         import ctypes
 
         ctypes.windll.user32.MessageBoxW(0, message, "SCL-40 Control", 0x10)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any failure here must still reach stderr
         print(message, file=sys.stderr)
 
 
@@ -171,7 +170,7 @@ def main() -> int:
 
     try:
         return run_dashboard(argv)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top level: report anything before exiting
         show_error(
             "대시보드를 시작하지 못했습니다.\n\n"
             f"{exc}\n\n"

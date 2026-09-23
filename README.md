@@ -3,6 +3,8 @@
 ![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)
 ![Controller](https://img.shields.io/badge/controller-Shimadzu%20SCL--40-334155)
+![Tests](https://github.com/daehyeon0311/scl40-control/actions/workflows/tests.yml/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-blue)
 ![Validation](https://img.shields.io/badge/physical%20validation-in%20progress-f59e0b)
 
 A dependency-free Python dashboard for monitoring and controlling Shimadzu pumps
@@ -311,8 +313,12 @@ Run `py -3 .\scl40_gui.py --help` for simulator tuning options.
 
 ## Confirmed HTTP/XML surface
 
-Only behavior observed on the current SCL-40 setup is treated as confirmed.
-Older SCL-10AVP/LC-20 serial commands are not assumed compatible.
+The SCL-40 has no published control API. Only behavior observed on the current
+setup is treated as confirmed, and older SCL-10AVP/LC-20 serial commands are not
+assumed compatible.
+
+**[docs/PROTOCOL.md](docs/PROTOCOL.md)** covers how the protocol was worked out,
+the full endpoint and login-code reference, and what is still unknown.
 
 <details>
 <summary>Show confirmed request shapes</summary>
@@ -418,9 +424,12 @@ Write paths are exercised only against the simulator, never against hardware.
 | `test_scl40_multi.py` | Multi-pump, storage, and role regression tests |
 | `test_scl40_protocol.py` | Client/simulator protocol and safety-limit tests |
 | `test_scl40_jetrun.py` | LCP run state machine tests |
+| `docs/PROTOCOL.md` | How the undocumented protocol was worked out |
+| `pyproject.toml` | Lint configuration enforced by CI |
 | `LICENSE` | MIT licence |
 | `START_SCL40_GUI.cmd` | Windows launcher |
 | `OPEN_SETTINGS.cmd` | Reopen packaged-app settings |
+| `.github/workflows/tests.yml` | Tests on Linux and Windows, Python 3.11-3.13, plus lint |
 | `.github/workflows/windows-release.yml` | Tested Windows EXE and Release build |
 
 ## Contributing

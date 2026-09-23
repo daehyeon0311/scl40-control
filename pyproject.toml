@@ -1,0 +1,27 @@
+# The application ships no package and has no runtime dependencies: this file
+# exists to pin the lint configuration that CI enforces.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import order
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "BLE",  # blind except
+    "DTZ",  # naive datetimes
+    "RUF",
+]
+ignore = [
+    "E741",  # single-letter names are fine in short numeric helpers
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately reach into private state to drive the state machine one
+# tick at a time, and build throwaway stand-ins inline.
+"test_*.py" = ["SLF001", "B011"]

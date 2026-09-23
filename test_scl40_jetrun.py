@@ -25,7 +25,6 @@ from scl40_jetrun import (
     RunError,
 )
 
-
 SETTLE = 15.0
 CONFIG = {
     "mode": "lcp_jet",

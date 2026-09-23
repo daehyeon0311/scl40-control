@@ -18,7 +18,6 @@ from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-
 XML_HEADER = '<?xml version="1.0" encoding="UTF-8"?>'
 
 # Back pressure at 1.0000 mL/min while the sample is being extruded, in MPa.
@@ -291,7 +290,7 @@ def make_sim_handler(device: SimulatedSCL40, latency: float = 0.0):
             self.end_headers()
             self.wfile.write(data)
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             length = min(int(self.headers.get("Content-Length", "0")), 65536)
             raw = self.rfile.read(length).decode("utf-8", errors="replace")
             try:
@@ -323,7 +322,7 @@ def make_sim_handler(device: SimulatedSCL40, latency: float = 0.0):
             else:
                 self.send_error(404)
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             self.send_error(404)
 
     return SimHandler
