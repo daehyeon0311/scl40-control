@@ -505,6 +505,7 @@ class TrendRecorder:
         self._lock = threading.Lock()
         self._min_interval = min_interval
         self._store = store
+        self._last_clock: dict[str, float] = {}
 
     @staticmethod
     def _number(value: Any) -> float | None:
@@ -517,15 +518,25 @@ class TrendRecorder:
         self, pressure: Any, flow: Any, target: Any, unit_id: str = "A",
         pump_on: bool | None = None, error_code: str = "",
     ) -> None:
-        now = time.time()
-        sample = (round(now, 2), self._number(pressure), self._number(flow), self._number(target))
-        if sample[1] is None and sample[2] is None:
+        values = (self._number(pressure), self._number(flow), self._number(target))
+        if values[0] is None and values[1] is None:
             return
+        now = round(time.time(), 3)
         with self._lock:
             samples = self._samples.setdefault(unit_id, deque(maxlen=self._capacity))
-            if samples and now - samples[-1][0] < self._min_interval:
+            # Thinning is decided on the real clock. Comparing it against the
+            # stored stamp instead would drop samples whenever rounding put the
+            # stored value ahead of the raw reading.
+            if now - self._last_clock.get(unit_id, float("-inf")) < self._min_interval:
                 return
-            samples.append(sample)
+            stamp = now
+            if samples and stamp <= samples[-1][0]:
+                # Stamps must stay strictly increasing: an incremental fetch
+                # asks for everything after `since`, so two samples sharing a
+                # stamp would lose one of them permanently.
+                stamp = round(samples[-1][0] + 0.001, 3)
+            self._last_clock[unit_id] = now
+            samples.append((stamp, *values))
         if self._store:
             self._store.record_sample(unit_id, pressure, flow, target, pump_on, error_code, ts=now)
 

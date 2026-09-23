@@ -383,15 +383,26 @@ unexpected value raises an error instead of being reported as success.
 
 ## Tests
 
-Run the offline regression suite:
+Run the offline suite. It uses only the standard library, needs no instrument, and
+finishes in about two seconds:
 
 ```powershell
-py -3 -m unittest -v test_scl40_multi.py
+py -3 -m unittest discover
 ```
 
-The suite covers two-pump discovery, per-unit Method/Monitor handling, flow-write
-isolation, system events, timed operation, role policy, cache invalidation, history,
-alarms, CSV export, and audit persistence.
+69 tests across three files:
+
+| File | Covers |
+|---|---|
+| `test_scl40_multi.py` | Two-pump discovery, per-unit Method/Monitor handling, flow-write isolation, system events, timed operation, role policy, cache invalidation, history, alarms, CSV export, audit persistence |
+| `test_scl40_protocol.py` | The real client against the simulator: XML builders and parsers, login result codes, write-then-readback verification, value limits, command serialization, trend history |
+| `test_scl40_jetrun.py` | The LCP state machine, one tick at a time against a fake clock: fill/run transitions, arming rules, pressure ceiling, stage timeouts, aborts, watch mode |
+
+The state machine tests replace `time.monotonic` with a controllable clock and call
+`_tick()` directly, so every transition is deterministic and nothing waits on wall
+time.
+
+Write paths are exercised only against the simulator, never against hardware.
 
 ## Repository layout
 
@@ -404,7 +415,10 @@ alarms, CSV export, and audit persistence.
 | `scl40_store.py` | SQLite telemetry, alarms, and audit storage |
 | `scl40_probe.py` | Safe read-only SCL HTTP discovery |
 | `scl40_sim.py` | Offline SCL-40 simulator |
-| `test_scl40_multi.py` | Regression test suite |
+| `test_scl40_multi.py` | Multi-pump, storage, and role regression tests |
+| `test_scl40_protocol.py` | Client/simulator protocol and safety-limit tests |
+| `test_scl40_jetrun.py` | LCP run state machine tests |
+| `LICENSE` | MIT licence |
 | `START_SCL40_GUI.cmd` | Windows launcher |
 | `OPEN_SETTINGS.cmd` | Reopen packaged-app settings |
 | `.github/workflows/windows-release.yml` | Tested Windows EXE and Release build |
@@ -416,6 +430,10 @@ operator-approved physical test. Never infer LC-40 behavior from an older serial
 protocol, and never commit credentials, session IDs, instrument logs, or site network
 details. Use a GitHub issue or pull request to document reproducible evidence and
 the exact firmware/module combination involved.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 
 ## Disclaimer
 
