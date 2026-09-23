@@ -1,9 +1,9 @@
-# SCL-40 Multi-Pump Control
+# Shimadzu SCL-40 Multi-Pump Control
 
 ![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white)
 ![Controller](https://img.shields.io/badge/controller-Shimadzu%20SCL--40-334155)
-![Tests](https://github.com/daehyeon0311/scl40-control/actions/workflows/tests.yml/badge.svg)
+![Tests](https://github.com/daehyeon0311/shimadzu-scl40-control/actions/workflows/tests.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Validation](https://img.shields.io/badge/physical%20validation-in%20progress-f59e0b)
 
@@ -24,7 +24,7 @@ The screenshot uses the built-in simulator. No physical instrument was connected
 
 No Python installation or command line is required for the Windows release.
 
-1. Open [GitHub Releases](https://github.com/daehyeon0311/scl40-control/releases/latest).
+1. Open [GitHub Releases](https://github.com/daehyeon0311/shimadzu-scl40-control/releases/latest).
 2. Download and extract `SCL40-Control-Windows-x64.zip`.
 3. Double-click `SCL40-Control.exe`.
 
@@ -114,8 +114,8 @@ step and no `requirements.txt`.
 Download the repository ZIP or clone it:
 
 ```powershell
-git clone https://github.com/daehyeon0311/scl40-control.git
-cd scl40-control
+git clone https://github.com/daehyeon0311/shimadzu-scl40-control.git
+cd shimadzu-scl40-control
 ```
 
 ### 2. Confirm the controller address
